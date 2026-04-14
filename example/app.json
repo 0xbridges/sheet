@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "bottom-sheet",
+    "slug": "bottom-sheet",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "bottomsheet",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.anonymous.bottom-sheet"
+    }
+  }
+}

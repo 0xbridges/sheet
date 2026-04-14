@@ -1,0 +1,72 @@
+{
+  "name": "@0xbridges/sheet",
+  "description": "Performance-first bottom & top sheets for React Native.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "react-native": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "llms.txt"
+  ],
+  "main": "./dist/index.js",
+  "react-native": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "0xbridges",
+    "url": "https://0xbridges.ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xbridges/sheet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0xbridges/sheet/issues"
+  },
+  "homepage": "https://0xbridges.ai",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "example:install": "npm install --prefix ./example",
+    "example:start": "npm --prefix ./example run start",
+    "example:ios": "npm --prefix ./example run ios",
+    "example:android": "npm --prefix ./example run android",
+    "example:web": "npm --prefix ./example run web",
+    "example:typecheck": "npm --prefix ./example run typecheck",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-native": ">=0.83.0",
+    "react-native-gesture-handler": ">=2.30.0",
+    "react-native-reanimated": ">=4.2.0",
+    "react-native-safe-area-context": ">=5.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "react": "19.2.0",
+    "react-native": "0.83.4",
+    "react-native-gesture-handler": "~2.30.0",
+    "react-native-reanimated": "4.2.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "typescript": "~5.9.2"
+  },
+  "keywords": [
+    "react-native",
+    "bottom-sheet",
+    "top-sheet",
+    "sheet",
+    "gesture",
+    "reanimated",
+    "modal"
+  ]
+}

@@ -1,0 +1,266 @@
+Project: @0xbridges/sheet
+
+Summary:
+@0xbridges/sheet is a React Native library for performant bottom sheets and top sheets with Reanimated and Gesture Handler.
+
+Primary behaviors (shared by BottomSheet and TopSheet):
+- snap points accept pixels, percentages, "content" sizing, and measured anchors
+- spring animation with velocity projection for natural snapping
+- rubber-band overscroll at edges
+- dismissal by swipe or backdrop tap, configurable per sheet
+- when dismissible=false, sheet rubber-bands at its floor instead of dismissing
+- detached mode floats the sheet with configurable padding
+- detached sheets can morph into fullscreen with live corner-radius interpolation
+- collapsedHeight creates a persistent peek floor for maps-style sheets
+- scroll-to-drag handoff via BottomSheetScrollView / TopSheetScrollView
+- backdrop opacity scales between floor and ceiling heights
+- backdrop can pass through touches or close on tap
+
+TopSheet-specific behaviors:
+- slides down from top of screen instead of up from bottom
+- drag handle starts at bottom when collapsed, transitions to top at fullscreen
+- fullscreen handle includes safe-area padding (below Dynamic Island / notch)
+- fullscreen dismissal uses slide-down gesture
+- when dismissible=false at fullscreen, dragging collapses to lowest snap instead of staying stuck
+
+Install:
+- npm install @0xbridges/sheet react-native-gesture-handler react-native-reanimated react-native-safe-area-context
+- consumer app must already have the normal setup required by gesture-handler, reanimated, and safe-area-context
+
+Main components:
+- BottomSheet
+- TopSheet
+
+BottomSheet props:
+- snapPoints: array of snap point definitions (pixels, percentages, "content", anchor points)
+- initialSnapIndex: which snap point to open at (default 0)
+- open: controlled open state
+- defaultOpen: initial open state for uncontrolled usage (default true)
+- allowFullScreen: adds full available height as extra top snap point
+- dismissible: enables swipe-down and backdrop-tap dismiss (default true)
+- collapsedHeight: persistent floor snap point for peek states
+- detached: floats sheet above bottom edge with rounded corners on all sides
+- detachedPadding: padding around detached sheet (number or { bottom, horizontal, left, right, top, vertical })
+- cornerRadius: border radius for sheet corners (default 28)
+- fullScreenCornerRadius: corner radius at fullscreen height, interpolated during drag
+- dragRegion: "sheet" (entire surface draggable) or "handle" (only handle area)
+- backdropOpacity: maximum backdrop opacity (default 0.34)
+- backdropPressBehavior: "close" or "none" (default "close")
+- backdropColor: backdrop color (default "#000000")
+- backdropStyle: additional backdrop style
+- handleVisible: show/hide drag handle (default true)
+- handleColor: handle indicator color
+- handleStyle: additional handle area style
+- sheetStyle: style for sheet container
+- contentContainerStyle: style for content wrapper
+- applyContentInset: add bottom safe-area padding to content (default true)
+- contentBottomInset: extra bottom inset on top of safe area (default 0)
+- topInset: top inset limiting maximum height (default 0)
+- style: style for root overlay container
+- onOpenChange: (open: boolean) => void
+- onDismiss: () => void
+- onSnapChange: (index: number, height: number) => void
+
+TopSheet props (differences from BottomSheet):
+- bottomInset: limits sheet's maximum downward extent (analogous to topInset on BottomSheet, default 0)
+- contentTopInset: extra top inset added to content container (default 0)
+- applyContentInset: when true, adds top safe-area padding to content (BottomSheet adds bottom, default true)
+- all other props are identical to BottomSheet
+
+Ref methods (BottomSheetRef / TopSheetRef):
+- present(): open at initialSnapIndex
+- dismiss(): close with spring animation
+- expand(): snap to highest configured point
+- snapToIndex(index): snap to specific index
+
+Snap point types:
+- number: absolute height in points
+- "${number}%": percentage of available height
+- "content": measured natural content height
+- BottomSheetAnchorPoint: measured from BottomSheetAnchor child layout via createBottomSheetAnchor
+
+Anchor snap points:
+- createBottomSheetAnchor(key, { offset? }) / createTopSheetAnchor(key, { offset? }): creates anchor point definitions
+- BottomSheetAnchor / TopSheetAnchor: marker View wrappers placed in sheet content, name must match key
+- snap height = anchor bottom edge + offset
+- anchors are measured in an off-screen container for correct layout
+
+Scrollable content:
+- BottomSheetScrollView / TopSheetScrollView: drop-in ScrollView replacements with drag handoff
+- sheet drags until ceiling, then inner scroll activates
+- pulling past scroll boundary hands gesture back to sheet
+- useBottomSheetInsets(): returns { bottom } for manual padding inside BottomSheet scroll views
+- useTopSheetInsets(): returns { top } for manual padding inside TopSheet scroll views
+
+Detached mode:
+- detached=true floats sheet with padding and four-corner radius
+- combine with allowFullScreen for card-to-fullscreen morph
+- corner radius, margins, and shadow interpolate during morph
+
+Collapsed peek:
+- collapsedHeight prepends a floor snap point
+- combine with dismissible=false and backdropOpacity=0 for maps-style persistent peek
+
+Embedded TopSheet pattern:
+- non-dismissible TopSheet floating over scrollable page content
+- set dismissible=false, backdropOpacity=0, backdropPressBehavior="none", dragRegion="sheet"
+- page ScrollView uses paddingTop matching collapsed sheet height + safe area
+- sheet expands to fullscreen on drag down, collapses back to card on drag from fullscreen
+
+Behavior rules:
+- snap target is chosen by nearest-snap with velocity projection
+- dismiss triggers when projected height < 50% of floor or velocity exceeds threshold
+- backdrop opacity interpolates: below floor fades toward zero, above floor scales from 58% to 100%
+- controlled mode requires open prop and onOpenChange handler
+- uncontrolled mode uses defaultOpen and manages state internally
+- TopSheet fullscreen uses slide mode (translateY-based dismiss); when dismissible=false, slide collapses to lowest snap instead of dismissing
+
+Minimal BottomSheet example:
+```tsx
+import { BottomSheet } from "@0xbridges/sheet";
+
+<BottomSheet
+  snapPoints={["content", "72%"]}
+  allowFullScreen
+  initialSnapIndex={0}
+>
+  <YourContent />
+</BottomSheet>
+```
+
+Minimal TopSheet example:
+```tsx
+import { TopSheet } from "@0xbridges/sheet";
+
+<TopSheet
+  snapPoints={["42%"]}
+  allowFullScreen
+  detached
+  detachedPadding={{ horizontal: 12, top: 12 }}
+  cornerRadius={56}
+  fullScreenCornerRadius={0}
+  initialSnapIndex={0}
+>
+  <YourContent />
+</TopSheet>
+```
+
+TopSheet embedded in page example:
+```tsx
+import { TopSheet } from "@0xbridges/sheet";
+
+<View style={{ flex: 1 }}>
+  <ScrollView contentContainerStyle={{ paddingTop: sheetHeight + 16 }}>
+    <PageContent />
+  </ScrollView>
+  <TopSheet
+    allowFullScreen backdropOpacity={0} backdropPressBehavior="none"
+    cornerRadius={56} defaultOpen detached
+    detachedPadding={{ horizontal: 12, top: safeAreaTop + 12 }}
+    dismissible={false} dragRegion="sheet" fullScreenCornerRadius={0}
+    open snapPoints={["42%"]}
+  >
+    <CardContent />
+  </TopSheet>
+</View>
+```
+
+Anchor example:
+```tsx
+import { BottomSheet, BottomSheetAnchor, createBottomSheetAnchor } from "@0xbridges/sheet";
+
+const summaryAnchor = createBottomSheetAnchor("summary", { offset: 18 });
+const detailAnchor = createBottomSheetAnchor("detail", { offset: 18 });
+
+<BottomSheet snapPoints={[summaryAnchor, detailAnchor]} allowFullScreen>
+  <BottomSheetAnchor name="summary">
+    <SummarySection />
+  </BottomSheetAnchor>
+  <BottomSheetAnchor name="detail">
+    <DetailSection />
+  </BottomSheetAnchor>
+</BottomSheet>
+```
+
+Scrollable example:
+```tsx
+import { BottomSheet, BottomSheetScrollView, useBottomSheetInsets } from "@0xbridges/sheet";
+
+function Content() {
+  const insets = useBottomSheetInsets();
+  return (
+    <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+      <LongContent />
+    </BottomSheetScrollView>
+  );
+}
+
+<BottomSheet snapPoints={["48%", "82%"]} allowFullScreen dragRegion="sheet" applyContentInset={false}>
+  <Content />
+</BottomSheet>
+```
+
+TopSheet scrollable example:
+```tsx
+import { TopSheet, TopSheetScrollView, useTopSheetInsets } from "@0xbridges/sheet";
+
+function Content() {
+  const insets = useTopSheetInsets();
+  return (
+    <TopSheetScrollView contentContainerStyle={{ paddingTop: insets.top + 10 }}>
+      <LongContent />
+    </TopSheetScrollView>
+  );
+}
+
+<TopSheet snapPoints={["48%", "82%"]} allowFullScreen dragRegion="sheet" applyContentInset={false}>
+  <Content />
+</TopSheet>
+```
+
+Public exports (BottomSheet):
+- BottomSheet
+- BottomSheetAnchor
+- BottomSheetScrollView
+- createBottomSheetAnchor
+- useBottomSheetInsets
+- BottomSheetAnchorPoint (type)
+- BottomSheetAnchorProps (type)
+- BottomSheetDetachedPadding (type)
+- BottomSheetInsets (type)
+- BottomSheetProps (type)
+- BottomSheetRef (type)
+- BottomSheetSnapPoint (type)
+- BottomSheetScrollViewProps (type)
+
+Public exports (TopSheet):
+- TopSheet
+- TopSheetAnchor
+- TopSheetScrollView
+- createTopSheetAnchor
+- useTopSheetInsets
+- TopSheetAnchorPoint (type)
+- TopSheetAnchorProps (type)
+- TopSheetDetachedPadding (type)
+- TopSheetInsets (type)
+- TopSheetProps (type)
+- TopSheetRef (type)
+- TopSheetSnapPoint (type)
+- TopSheetScrollViewProps (type)
+
+Performance guidance:
+- gesture math runs on UI thread via Reanimated worklets
+- anchor positions are measured in an off-screen container to avoid layout thrashing
+- anchor registration is debounced to batch rapid layout changes
+- prefer pixel or percentage snap points when heights are known
+- keep children stable across renders
+- use sheetStyle for background instead of extra wrapper views
+- set applyContentInset=false when using BottomSheetScrollView and handle padding via useBottomSheetInsets
+
+Reference:
+- human documentation: ./README.md
+- repository demo app: ./example/src/demo/demo-screen.tsx
+- scenario definitions: ./example/src/demo/scenarios.tsx
+- embedded top sheet example: ./example/src/demo/embedded-top-sheet-screen.tsx
+- bottom sheet source: ./src/lib/bottom-sheet.tsx
+- top sheet source: ./src/lib/top-sheet.tsx
