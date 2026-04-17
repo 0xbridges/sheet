@@ -1,6 +1,9 @@
 # @0xbridges/sheet
+### Performant React Native Bottom & Top Sheets
 
-[![npm](https://img.shields.io/npm/v/@0xbridges/sheet)](https://www.npmjs.com/package/@0xbridges/sheet)
+[![npm](https://img.shields.io/npm/v/@0xbridges/sheet)](https://www.npmjs.com/package/@0xbridges/sheet)   ![GitHub Repo stars](https://img.shields.io/github/stars/0xbridges/sheet)
+<img width="1954" height="786" alt="Image" src="https://github.com/user-attachments/assets/8fff6400-c4e7-497f-b1e5-2b2bff1f6637" />
+<video width="470" height="960" alt="Video" src="https://github.com/user-attachments/assets/f8940e78-7e61-42ec-ad3d-40169e83b201" />
 
 `@0xbridges/sheet` is a React Native library for performant bottom sheets and top sheets where:
 
