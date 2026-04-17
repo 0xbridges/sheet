@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ScrollViewProps, StyleProp, ViewProps, ViewStyle } from "react-native";
+import { NativeScrollEvent, ScrollViewProps, StyleProp, ViewProps, ViewStyle } from "react-native";
 export type BottomSheetInsets = {
     bottom: number;
 };
@@ -57,7 +57,17 @@ export type BottomSheetProps = {
 export type BottomSheetAnchorProps = ViewProps & {
     name: string;
 };
-export type BottomSheetScrollViewProps = ScrollViewProps;
+export type BottomSheetScrollViewProps = Omit<ScrollViewProps, "onScroll"> & {
+    /**
+     * Called for every scroll event with the raw `NativeScrollEvent`.
+     *
+     * Pass a Reanimated worklet to handle scroll on the UI thread with zero
+     * bridge overhead. Pass a regular JS function and it will be invoked via
+     * `runOnJS` (one bridge crossing per event — only do this when you really
+     * need it).
+     */
+    onScroll?: (event: NativeScrollEvent) => void;
+};
 export declare function createBottomSheetAnchor(key: string, options?: {
     offset?: number;
 }): BottomSheetAnchorPoint;

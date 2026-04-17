@@ -76,7 +76,7 @@ Ref methods (BottomSheetRef / TopSheetRef):
 Snap point types:
 - number: absolute height in points
 - "${number}%": percentage of available height
-- "content": measured natural content height
+- "content": measured natural content height; measured once per presentation in an off-screen container, then unmounted (children render exactly once). If content can resize while open, prefer pixel/percentage/anchor snaps.
 - BottomSheetAnchorPoint: measured from BottomSheetAnchor child layout via createBottomSheetAnchor
 
 Anchor snap points:
@@ -91,6 +91,8 @@ Scrollable content:
 - pulling past scroll boundary hands gesture back to sheet
 - useBottomSheetInsets(): returns { bottom } for manual padding inside BottomSheet scroll views
 - useTopSheetInsets(): returns { top } for manual padding inside TopSheet scroll views
+- onScroll on BottomSheetScrollView / TopSheetScrollView is typed as (event: NativeScrollEvent) => void (raw native event, not NativeSyntheticEvent)
+- pass a Reanimated worklet (e.g. via useAnimatedScrollHandler) for zero-bridge UI-thread handling; plain JS callbacks are invoked via runOnJS, one bridge crossing per event
 
 Detached mode:
 - detached=true floats sheet with padding and four-corner radius
@@ -252,6 +254,9 @@ Performance guidance:
 - gesture math runs on UI thread via Reanimated worklets
 - anchor positions are measured in an off-screen container to avoid layout thrashing
 - anchor registration is debounced to batch rapid layout changes
+- snapPoints and collapsedHeight are structurally cached, so inline arrays do not cascade re-renders
+- "content" snap is measured once per presentation; children render exactly once
+- pass a worklet to BottomSheetScrollView / TopSheetScrollView onScroll to avoid bridge crossings per scroll event
 - prefer pixel or percentage snap points when heights are known
 - keep children stable across renders
 - use sheetStyle for background instead of extra wrapper views

@@ -1,6 +1,8 @@
 import * as React from "react";
 import {
   LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollViewProps,
   StyleProp,
@@ -153,7 +155,17 @@ export type TopSheetAnchorProps = ViewProps & {
   name: string;
 };
 
-export type TopSheetScrollViewProps = ScrollViewProps;
+export type TopSheetScrollViewProps = Omit<ScrollViewProps, "onScroll"> & {
+  /**
+   * Called for every scroll event with the raw `NativeScrollEvent`.
+   *
+   * Pass a Reanimated worklet to handle scroll on the UI thread with zero
+   * bridge overhead. Pass a regular JS function and it will be invoked via
+   * `runOnJS` (one bridge crossing per event — only do this when you really
+   * need it).
+   */
+  onScroll?: (event: NativeScrollEvent) => void;
+};
 
 type ResolvedDetachedPadding = {
   bottom: number;
@@ -201,20 +213,31 @@ function clampIndex(index: number, maxIndex: number) {
 }
 
 function uniqueHeights(values: readonly number[]) {
-  const sorted = [...values].sort((left, right) => left - right);
+  if (values.length === 0) {
+    return [];
+  }
+
+  if (values.length === 1) {
+    const single = values[0];
+    return single > 0 ? [single] : [];
+  }
+
+  const sorted = values.slice().sort((left, right) => left - right);
   const next: number[] = [];
+  let previous = -Infinity;
 
-  sorted.forEach((value) => {
+  for (let index = 0; index < sorted.length; index += 1) {
+    const value = sorted[index];
+
     if (value <= 0) {
-      return;
+      continue;
     }
 
-    const previous = next[next.length - 1];
-
-    if (previous == null || Math.abs(previous - value) > SNAP_EPSILON) {
+    if (Math.abs(previous - value) > SNAP_EPSILON) {
       next.push(value);
+      previous = value;
     }
-  });
+  }
 
   return next;
 }
@@ -303,11 +326,90 @@ function buildSnapPoints(
   return next;
 }
 
+function snapPointEqual(
+  a: TopSheetSnapPoint | undefined,
+  b: TopSheetSnapPoint | undefined
+) {
+  if (a === b) {
+    return true;
+  }
+
+  if (a == null || b == null) {
+    return false;
+  }
+
+  if (typeof a !== typeof b) {
+    return false;
+  }
+
+  if (typeof a !== "object" || typeof b !== "object") {
+    return false;
+  }
+
+  return (
+    a.type === b.type &&
+    a.key === b.key &&
+    (a.offset ?? 0) === (b.offset ?? 0)
+  );
+}
+
+function snapPointsArrayEqual(
+  a: readonly TopSheetSnapPoint[] | undefined,
+  b: readonly TopSheetSnapPoint[] | undefined
+) {
+  if (a === b) {
+    return true;
+  }
+
+  if (a == null || b == null) {
+    return false;
+  }
+
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    if (!snapPointEqual(a[index], b[index])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function useStableRequestedSnapPoints(
+  snapPoints: readonly TopSheetSnapPoint[] | undefined,
+  collapsedHeight: TopSheetSnapPoint | undefined
+): TopSheetSnapPoint[] {
+  const cacheRef = React.useRef<{
+    collapsedHeight: TopSheetSnapPoint | undefined;
+    result: TopSheetSnapPoint[];
+    snapPoints: readonly TopSheetSnapPoint[] | undefined;
+  } | null>(null);
+
+  const cache = cacheRef.current;
+
+  if (
+    cache != null &&
+    snapPointsArrayEqual(cache.snapPoints, snapPoints) &&
+    snapPointEqual(cache.collapsedHeight, collapsedHeight)
+  ) {
+    return cache.result;
+  }
+
+  const result = buildSnapPoints(snapPoints, collapsedHeight);
+  cacheRef.current = { collapsedHeight, result, snapPoints };
+  return result;
+}
+
 function useLatestRef<T>(value: T) {
   const ref = React.useRef(value);
   React.useInsertionEffect(() => {
-    ref.current = value;
-  });
+    if (ref.current !== value) {
+      ref.current = value;
+    }
+  }, [value]);
   return ref;
 }
 
@@ -355,7 +457,7 @@ export function TopSheetAnchor({
 }: TopSheetAnchorProps) {
   const context = React.useContext(TopSheetInternalContext);
   const anchorRef = React.useRef<View | null>(null);
-  const measureRef = React.useRef<(event?: LayoutChangeEvent) => void>(() => {});
+  const performMeasureRef = React.useRef<() => void>(() => {});
   const pendingFrameRef = React.useRef<number | null>(null);
 
   const cancelPendingMeasure = React.useCallback(() => {
@@ -368,45 +470,54 @@ export function TopSheetAnchor({
   }, []);
 
   const scheduleMeasure = React.useCallback(() => {
-    cancelPendingMeasure();
+    if (pendingFrameRef.current != null) {
+      return;
+    }
+
     pendingFrameRef.current = requestAnimationFrame(() => {
       pendingFrameRef.current = null;
-      measureRef.current();
+      performMeasureRef.current();
     });
-  }, [cancelPendingMeasure]);
+  }, []);
 
-  const measure = React.useCallback(
-    (event?: LayoutChangeEvent) => {
-      if (context == null) {
-        onLayout?.(event as LayoutChangeEvent);
-        return;
-      }
+  const performMeasure = React.useCallback(() => {
+    if (context == null) {
+      return;
+    }
 
-      const anchorNode = anchorRef.current as MeasureableView | null;
-      const contentRootNode = context.contentRootRef.current;
+    const anchorNode = anchorRef.current as MeasureableView | null;
+    const contentRootNode = context.contentRootRef.current;
 
-      if (anchorNode == null || contentRootNode == null) {
+    if (anchorNode == null || contentRootNode == null) {
+      scheduleMeasure();
+      return;
+    }
+
+    anchorNode.measureLayout(
+      contentRootNode,
+      (_left, top, _width, height) => {
+        context.registerAnchor(name, { height, y: top });
+      },
+      () => {
         scheduleMeasure();
-        onLayout?.(event as LayoutChangeEvent);
+      }
+    );
+  }, [context, name, scheduleMeasure]);
+
+  performMeasureRef.current = performMeasure;
+
+  const handleLayout = React.useCallback(
+    (event: LayoutChangeEvent) => {
+      onLayout?.(event);
+
+      if (context == null) {
         return;
       }
 
-      anchorNode.measureLayout(
-        contentRootNode,
-        (_left, top, _width, height) => {
-          context.registerAnchor(name, { height, y: top });
-        },
-        () => {
-          scheduleMeasure();
-        }
-      );
-
-      onLayout?.(event as LayoutChangeEvent);
+      scheduleMeasure();
     },
-    [context, name, onLayout, scheduleMeasure]
+    [context, onLayout, scheduleMeasure]
   );
-
-  measureRef.current = measure;
 
   React.useEffect(() => {
     return () => {
@@ -415,7 +526,7 @@ export function TopSheetAnchor({
     };
   }, [cancelPendingMeasure, context, name]);
 
-  return <View {...props} onLayout={measure} ref={anchorRef} />;
+  return <View {...props} onLayout={handleLayout} ref={anchorRef} />;
 }
 
 export function TopSheetScrollView({
@@ -470,32 +581,55 @@ export function TopSheetScrollView({
           context.scrollableOffsetY.value = Math.max(event.contentOffset.y, 0);
         }
 
-        if (onScrollRef.current != null) {
-          runOnJS(onScrollRef.current)(event as never);
+        const callback = onScrollRef.current;
+
+        if (callback == null) {
+          return;
+        }
+
+        if ((callback as { __workletHash?: number }).__workletHash != null) {
+          callback(event);
+        } else {
+          runOnJS(callback)(event);
         }
       },
     },
     [context, onScrollRef]
   );
 
+  const fallbackOnScroll = React.useMemo(() => {
+    if (onScroll == null) {
+      return undefined;
+    }
+
+    return (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      onScroll(event.nativeEvent);
+    };
+  }, [onScroll]);
+
   const effectiveScrollEnabled = scrollEnabled ?? derivedScrollEnabled;
 
-  if (context == null) {
+  const sheetPanGesture = context?.sheetPanGesture;
+  const nativeGesture = React.useMemo(
+    () =>
+      sheetPanGesture != null
+        ? Gesture.Native().simultaneousWithExternalGesture(sheetPanGesture)
+        : null,
+    [sheetPanGesture]
+  );
+
+  if (context == null || nativeGesture == null) {
     return (
       <Animated.ScrollView
         {...props}
         alwaysBounceVertical={alwaysBounceVertical}
         bounces={bounces}
-        onScroll={onScroll}
+        onScroll={fallbackOnScroll}
         scrollEnabled={scrollEnabled}
         scrollEventThrottle={scrollEventThrottle}
       />
     );
   }
-
-  const nativeGesture = Gesture.Native().simultaneousWithExternalGesture(
-    context.sheetPanGesture
-  );
 
   return (
     <GestureDetector gesture={nativeGesture}>
@@ -552,9 +686,11 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
     const [isVisible, setIsVisible] = React.useState(open);
     const [settledIndex, setSettledIndex] = React.useState(-1);
     const [contentHeight, setContentHeight] = React.useState(0);
-    const [anchors, setAnchors] = React.useState<Map<string, AnchorLayout>>(
-      () => new Map()
+    const anchorsRef = React.useRef<Map<string, AnchorLayout>>(
+      new Map()
     );
+    const [anchorsVersion, setAnchorsVersion] = React.useState(0);
+    const pendingAnchorBumpRef = React.useRef<number | null>(null);
 
     const dimensions = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
@@ -582,17 +718,23 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
     const availableHeight = allowFullScreen
       ? dimensions.height
       : Math.max(dimensions.height - bottomInset, 0);
-    const requestedSnapPoints = React.useMemo(
-      () => buildSnapPoints(snapPoints, collapsedHeight),
-      [collapsedHeight, snapPoints]
+    const requestedSnapPoints = useStableRequestedSnapPoints(
+      snapPoints,
+      collapsedHeight
     );
-    const requestedAnchorKeys = React.useMemo(
-      () =>
-        requestedSnapPoints
-          .filter(isAnchorSnapPoint)
-          .map((snapPoint) => snapPoint.key),
-      [requestedSnapPoints]
-    );
+    const requestedAnchorKeys = React.useMemo(() => {
+      const keys: string[] = [];
+
+      for (let index = 0; index < requestedSnapPoints.length; index += 1) {
+        const snapPoint = requestedSnapPoints[index];
+
+        if (isAnchorSnapPoint(snapPoint)) {
+          keys.push(snapPoint.key);
+        }
+      }
+
+      return keys;
+    }, [requestedSnapPoints]);
     const hasAnchorSnapPoints = requestedAnchorKeys.length > 0;
     const needsContentMeasurement = React.useMemo(
       () => requestedSnapPoints.some((snapPoint) => snapPoint === "content"),
@@ -617,7 +759,10 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
         return;
       }
 
-      const allAnchorsRegistered = requestedAnchorKeys.every((key) => anchors.has(key));
+      const map = anchorsRef.current;
+      const allAnchorsRegistered = requestedAnchorKeys.every((key) =>
+        map.has(key)
+      );
 
       if (!allAnchorsRegistered) {
         setAnchorsSettled(false);
@@ -633,9 +778,10 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       return () => {
         clearTimeout(timeoutId);
       };
-    }, [anchors, hasAnchorSnapPoints, requestedAnchorKeys]);
+    }, [anchorsVersion, hasAnchorSnapPoints, requestedAnchorKeys]);
 
     const resolvedSnapHeights = React.useMemo(() => {
+      const anchors = anchorsRef.current;
       const next = requestedSnapPoints
         .map((snapPoint) => {
           if (shouldDeferAnchorSnaps && isAnchorSnapPoint(snapPoint)) {
@@ -656,18 +802,13 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       return result;
     }, [
       allowFullScreen,
-      anchors,
+      anchorsVersion,
       anchorsSettled,
       availableHeight,
       contentHeight,
       requestedSnapPoints,
       shouldDeferAnchorSnaps,
     ]);
-    const resolvedSnapHeightsKey = React.useMemo(
-      () => resolvedSnapHeights.join("|"),
-      [resolvedSnapHeights]
-    );
-
     const initialIndex = React.useMemo(
       () => clampIndex(initialSnapIndex, Math.max(resolvedSnapHeights.length - 1, 0)),
       [initialSnapIndex, resolvedSnapHeights.length]
@@ -694,55 +835,68 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       fullScreenCornerRadius ?? (detached ? 0 : cornerRadius);
 
     const lowestSnapHeight = resolvedSnapHeights[0] ?? 0;
+    const highestSnapHeight =
+      resolvedSnapHeights[resolvedSnapHeights.length - 1] ?? 0;
 
     React.useEffect(() => {
       isVisibleRef.current = isVisible;
     }, [isVisible]);
 
-    const registerAnchor = React.useCallback(
-      (name: string, layout: AnchorLayout) => {
-        setAnchors((current) => {
-          const previous = current.get(name);
-
-          if (
-            previous != null &&
-            Math.abs(previous.y - layout.y) <= 0.5 &&
-            Math.abs(previous.height - layout.height) <= 0.5
-          ) {
-            return current;
-          }
-
-          if (
-            previous != null &&
-            previous.height > 0 &&
-            layout.height <= 0
-          ) {
-            return current;
-          }
-
-          const next = new Map(current);
-          next.set(name, layout);
-          return next;
-        });
-      },
-      []
-    );
-
-    const unregisterAnchor = React.useCallback((name: string) => {
-      if (initialAnchorSettleRef.current) {
+    const scheduleAnchorVersionBump = React.useCallback(() => {
+      if (pendingAnchorBumpRef.current != null) {
         return;
       }
 
-      setAnchors((current) => {
-        if (!current.has(name)) {
-          return current;
-        }
-
-        const next = new Map(current);
-        next.delete(name);
-        return next;
+      pendingAnchorBumpRef.current = requestAnimationFrame(() => {
+        pendingAnchorBumpRef.current = null;
+        setAnchorsVersion((current) => current + 1);
       });
     }, []);
+
+    const registerAnchor = React.useCallback(
+      (name: string, layout: AnchorLayout) => {
+        const map = anchorsRef.current;
+        const previous = map.get(name);
+
+        if (
+          previous != null &&
+          Math.abs(previous.y - layout.y) <= 0.5 &&
+          Math.abs(previous.height - layout.height) <= 0.5
+        ) {
+          return;
+        }
+
+        if (
+          previous != null &&
+          previous.height > 0 &&
+          layout.height <= 0
+        ) {
+          return;
+        }
+
+        map.set(name, layout);
+        scheduleAnchorVersionBump();
+      },
+      [scheduleAnchorVersionBump]
+    );
+
+    const unregisterAnchor = React.useCallback(
+      (name: string) => {
+        if (initialAnchorSettleRef.current) {
+          return;
+        }
+
+        const map = anchorsRef.current;
+
+        if (!map.has(name)) {
+          return;
+        }
+
+        map.delete(name);
+        scheduleAnchorVersionBump();
+      },
+      [scheduleAnchorVersionBump]
+    );
 
     const requestOpenChange = React.useCallback(
       (nextOpen: boolean) => {
@@ -928,12 +1082,7 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
 
     React.useLayoutEffect(() => {
       snapHeights.value = resolvedSnapHeights;
-    }, [
-      resolvedSnapHeights,
-      snapHeights,
-    ]);
 
-    React.useLayoutEffect(() => {
       if (!open) {
         if (isVisibleRef.current) {
           animateToClosed({
@@ -971,7 +1120,8 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       initialIndex,
       latestSettledIndex,
       open,
-      resolvedSnapHeightsKey,
+      resolvedSnapHeights,
+      snapHeights,
     ]);
 
     React.useEffect(() => {
@@ -981,6 +1131,11 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
         isMountedRef.current = false;
         cancelAnimation(currentHeight);
         cancelAnimation(dismissOffset);
+
+        if (pendingAnchorBumpRef.current != null) {
+          cancelAnimationFrame(pendingAnchorBumpRef.current);
+          pendingAnchorBumpRef.current = null;
+        }
       };
     }, [currentHeight, dismissOffset]);
 
@@ -1229,9 +1384,8 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
     ]);
 
     const animatedBackdropStyle = useAnimatedStyle(() => {
-      const heights = snapHeights.value;
-      const maxHeight = interactiveMaxHeight.value;
-      const floorHeight = heights[0] ?? 0;
+      const maxHeight = highestSnapHeight;
+      const floorHeight = lowestSnapHeight;
       // Factor in dismiss slide offset for backdrop fade
       const effectiveHeight = Math.max(
         0,
@@ -1263,121 +1417,101 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       return {
         opacity: backdropOpacity * progress,
       };
-    }, [backdropOpacity]);
+    }, [backdropOpacity, highestSnapHeight, lowestSnapHeight]);
+
+    const useDetachedMargins = detached && allowFullScreen;
+    const isDetached = detached;
+    const radiusDelta = cornerRadius - fullscreenRadius;
+    const detachedBottom = resolvedDetachedPadding.bottom;
+    const detachedLeft = resolvedDetachedPadding.left;
+    const detachedRight = resolvedDetachedPadding.right;
+    const detachedTop = resolvedDetachedPadding.top;
 
     const animatedSheetStyle = useAnimatedStyle(() => {
-      const maxHeight = interactiveMaxHeight.value;
+      const maxHeight = highestSnapHeight;
       const minHeight = lowestSnapHeight;
       const morphRange = Math.max(maxHeight - minHeight, 1);
-      const morphProgress =
-        detached && allowFullScreen
-          ? clamp((currentHeight.value - minHeight) / morphRange, 0, 1)
+      const morphProgress = useDetachedMargins
+        ? clamp((currentHeight.value - minHeight) / morphRange, 0, 1)
+        : 0;
+      const marginScale = useDetachedMargins
+        ? 1 - morphProgress
+        : isDetached
+          ? 1
           : 0;
-
-      const topMargin =
-        detached && allowFullScreen
-          ? resolvedDetachedPadding.top * (1 - morphProgress)
-          : detached
-            ? resolvedDetachedPadding.top
-            : 0;
-      const leftMargin =
-        detached && allowFullScreen
-          ? resolvedDetachedPadding.left * (1 - morphProgress)
-          : detached
-            ? resolvedDetachedPadding.left
-            : 0;
-      const rightMargin =
-        detached && allowFullScreen
-          ? resolvedDetachedPadding.right * (1 - morphProgress)
-          : detached
-            ? resolvedDetachedPadding.right
-            : 0;
-      const bottomMargin =
-        detached && allowFullScreen
-          ? resolvedDetachedPadding.bottom * (1 - morphProgress)
-          : detached
-            ? resolvedDetachedPadding.bottom
-            : 0;
+      const radius = cornerRadius - radiusDelta * morphProgress;
+      const detachedRadius = isDetached ? radius : 0;
+      const heightDelta = !dismissible
+        ? minHeight - currentHeight.value
+        : 0;
 
       return {
-        borderBottomLeftRadius:
-          cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress,
-        borderBottomRightRadius:
-          cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress,
-        borderTopLeftRadius: detached
-          ? cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress
-          : 0,
-        borderTopRightRadius: detached
-          ? cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress
-          : 0,
+        borderBottomLeftRadius: radius,
+        borderBottomRightRadius: radius,
+        borderTopLeftRadius: detachedRadius,
+        borderTopRightRadius: detachedRadius,
         height: currentHeight.value,
-        marginBottom: bottomMargin,
-        marginLeft: leftMargin,
-        marginRight: rightMargin,
-        marginTop: topMargin,
+        marginBottom: detachedBottom * marginScale,
+        marginLeft: detachedLeft * marginScale,
+        marginRight: detachedRight * marginScale,
+        marginTop: detachedTop * marginScale,
         shadowOpacity: 0.24 - 0.12 * morphProgress,
         transform: [
           {
             translateY:
               dismissOffset.value +
-              (!dismissible && currentHeight.value < minHeight
-                ? (minHeight - currentHeight.value) * 0.08
-                : 0),
+              (heightDelta > 0 ? heightDelta * 0.08 : 0),
           },
         ],
       };
     }, [
-      allowFullScreen,
       cornerRadius,
-      detached,
+      detachedBottom,
+      detachedLeft,
+      detachedRight,
+      detachedTop,
       dismissible,
-      fullscreenRadius,
-      interactiveMaxHeight,
+      highestSnapHeight,
+      isDetached,
       lowestSnapHeight,
-      resolvedDetachedPadding.bottom,
-      resolvedDetachedPadding.left,
-      resolvedDetachedPadding.right,
-      resolvedDetachedPadding.top,
+      radiusDelta,
+      useDetachedMargins,
     ]);
 
     const topSafeArea = safeAreaInsets.top;
+    const handleAreaHeight = handleVisible ? DEFAULT_HANDLE_AREA_HEIGHT : 8;
+
+    const handleMorph = useDerivedValue(() => {
+      if (!allowFullScreen) {
+        return 0;
+      }
+
+      const maxHeight = highestSnapHeight;
+      const minHeight = lowestSnapHeight;
+      const morphRange = Math.max(maxHeight - minHeight, 1);
+      return clamp((currentHeight.value - minHeight) / morphRange, 0, 1);
+    });
 
     // Handle at top: fades in as sheet approaches fullscreen, includes safe area padding
     const animatedTopHandleStyle = useAnimatedStyle(() => {
-      const maxHeight = interactiveMaxHeight.value;
-      const minHeight = lowestSnapHeight;
-      const morphRange = Math.max(maxHeight - minHeight, 1);
-      const handleMorph = allowFullScreen
-        ? clamp((currentHeight.value - minHeight) / morphRange, 0, 1)
-        : 0;
-      const handleHeight = handleVisible
-        ? DEFAULT_HANDLE_AREA_HEIGHT
-        : 8;
+      const morph = handleMorph.value;
 
       return {
-        minHeight: handleMorph * (handleHeight + topSafeArea),
-        paddingTop: handleMorph * topSafeArea,
-        opacity: handleMorph,
+        minHeight: morph * (handleAreaHeight + topSafeArea),
+        paddingTop: morph * topSafeArea,
+        opacity: morph,
       };
-    }, [allowFullScreen, handleVisible, lowestSnapHeight, topSafeArea]);
+    }, [handleAreaHeight, topSafeArea]);
 
     // Handle at bottom: visible when collapsed, fades out approaching fullscreen
     const animatedBottomHandleStyle = useAnimatedStyle(() => {
-      const maxHeight = interactiveMaxHeight.value;
-      const minHeight = lowestSnapHeight;
-      const morphRange = Math.max(maxHeight - minHeight, 1);
-      const handleMorph = allowFullScreen
-        ? clamp((currentHeight.value - minHeight) / morphRange, 0, 1)
-        : 0;
-      const handleHeight = handleVisible
-        ? DEFAULT_HANDLE_AREA_HEIGHT
-        : 8;
+      const inverseMorph = 1 - handleMorph.value;
 
       return {
-        minHeight: (1 - handleMorph) * handleHeight,
-        opacity: 1 - handleMorph,
+        minHeight: inverseMorph * handleAreaHeight,
+        opacity: inverseMorph,
       };
-    }, [allowFullScreen, handleVisible, lowestSnapHeight]);
+    }, [handleAreaHeight]);
 
     const contextValue = React.useMemo<TopSheetInternalContextValue>(
       () => ({
@@ -1405,20 +1539,40 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
 
     const needsAnchorMeasurement =
       hasAnchorSnapPoints && open && resolvedSnapHeights.length === 0;
-    const shouldRenderMeasurement = needsContentMeasurement && open;
+    const shouldRenderMeasurement =
+      needsContentMeasurement && open && contentHeight === 0;
     const shouldRenderSheet = isVisible && !needsAnchorMeasurement;
+
+    const backdropPressEnabled =
+      dismissible && backdropPressBehavior === "close";
+    const handleBackdropPress = React.useCallback(() => {
+      if (!backdropPressEnabled) {
+        return;
+      }
+
+      animateToClosed();
+    }, [animateToClosed, backdropPressEnabled]);
+    const backdropBaseStyle = React.useMemo(
+      () => [
+        StyleSheet.absoluteFillObject,
+        { backgroundColor: backdropColor },
+      ],
+      [backdropColor]
+    );
+    const backdropPointerEvents =
+      isVisible && backdropPressBehavior === "close" ? "auto" : "none";
+
+    const handleIndicatorStyle = React.useMemo(
+      () => [styles.handleIndicator, { backgroundColor: handleColor }],
+      [handleColor]
+    );
 
     if (!shouldRenderMeasurement && !shouldRenderSheet && !needsAnchorMeasurement) {
       return null;
     }
 
     const handleIndicator = handleVisible ? (
-      <View
-        style={[
-          styles.handleIndicator,
-          { backgroundColor: handleColor },
-        ]}
-      />
+      <View style={handleIndicatorStyle} />
     ) : null;
 
     const topHandle = dragRegion === "handle" ? (
@@ -1571,24 +1725,9 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
         {measurementContent}
         {anchorMeasurementContent}
         <AnimatedPressable
-          onPress={() => {
-            if (!dismissible || backdropPressBehavior !== "close") {
-              return;
-            }
-
-            animateToClosed();
-          }}
-          pointerEvents={
-            isVisible && backdropPressBehavior === "close" ? "auto" : "none"
-          }
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: backdropColor,
-            },
-            animatedBackdropStyle,
-            backdropStyle,
-          ]}
+          onPress={handleBackdropPress}
+          pointerEvents={backdropPointerEvents}
+          style={[backdropBaseStyle, animatedBackdropStyle, backdropStyle]}
         />
         {shouldRenderSheet
           ? dragRegion === "sheet"
@@ -1628,8 +1767,12 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   root: {
-    ...StyleSheet.absoluteFillObject,
+    bottom: 0,
     justifyContent: "flex-start",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   sheet: {
     backgroundColor: "#101317",

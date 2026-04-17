@@ -85,17 +85,26 @@ function clampIndex(index, maxIndex) {
     return Math.max(0, Math.min(maxIndex, Math.round(index)));
 }
 function uniqueHeights(values) {
-    const sorted = [...values].sort((left, right) => left - right);
+    if (values.length === 0) {
+        return [];
+    }
+    if (values.length === 1) {
+        const single = values[0];
+        return single > 0 ? [single] : [];
+    }
+    const sorted = values.slice().sort((left, right) => left - right);
     const next = [];
-    sorted.forEach((value) => {
+    let previous = -Infinity;
+    for (let index = 0; index < sorted.length; index += 1) {
+        const value = sorted[index];
         if (value <= 0) {
-            return;
+            continue;
         }
-        const previous = next[next.length - 1];
-        if (previous == null || Math.abs(previous - value) > SNAP_EPSILON) {
+        if (Math.abs(previous - value) > SNAP_EPSILON) {
             next.push(value);
+            previous = value;
         }
-    });
+    }
     return next;
 }
 function rubberBand(distance) {
@@ -153,11 +162,59 @@ function buildSnapPoints(snapPoints, collapsedHeight) {
     }
     return next;
 }
+function snapPointEqual(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (a == null || b == null) {
+        return false;
+    }
+    if (typeof a !== typeof b) {
+        return false;
+    }
+    if (typeof a !== "object" || typeof b !== "object") {
+        return false;
+    }
+    return (a.type === b.type &&
+        a.key === b.key &&
+        (a.offset ?? 0) === (b.offset ?? 0));
+}
+function snapPointsArrayEqual(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (a == null || b == null) {
+        return false;
+    }
+    if (a.length !== b.length) {
+        return false;
+    }
+    for (let index = 0; index < a.length; index += 1) {
+        if (!snapPointEqual(a[index], b[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+function useStableRequestedSnapPoints(snapPoints, collapsedHeight) {
+    const cacheRef = React.useRef(null);
+    const cache = cacheRef.current;
+    if (cache != null &&
+        snapPointsArrayEqual(cache.snapPoints, snapPoints) &&
+        snapPointEqual(cache.collapsedHeight, collapsedHeight)) {
+        return cache.result;
+    }
+    const result = buildSnapPoints(snapPoints, collapsedHeight);
+    cacheRef.current = { collapsedHeight, result, snapPoints };
+    return result;
+}
 function useLatestRef(value) {
     const ref = React.useRef(value);
     React.useInsertionEffect(() => {
-        ref.current = value;
-    });
+        if (ref.current !== value) {
+            ref.current = value;
+        }
+    }, [value]);
     return ref;
 }
 function getNearestSnapIndex(height, snapHeights) {
@@ -188,7 +245,7 @@ function useTopSheetInsets() {
 function TopSheetAnchor({ name, onLayout, ...props }) {
     const context = React.useContext(TopSheetInternalContext);
     const anchorRef = React.useRef(null);
-    const measureRef = React.useRef(() => { });
+    const performMeasureRef = React.useRef(() => { });
     const pendingFrameRef = React.useRef(null);
     const cancelPendingMeasure = React.useCallback(() => {
         if (pendingFrameRef.current == null) {
@@ -198,22 +255,22 @@ function TopSheetAnchor({ name, onLayout, ...props }) {
         pendingFrameRef.current = null;
     }, []);
     const scheduleMeasure = React.useCallback(() => {
-        cancelPendingMeasure();
+        if (pendingFrameRef.current != null) {
+            return;
+        }
         pendingFrameRef.current = requestAnimationFrame(() => {
             pendingFrameRef.current = null;
-            measureRef.current();
+            performMeasureRef.current();
         });
-    }, [cancelPendingMeasure]);
-    const measure = React.useCallback((event) => {
+    }, []);
+    const performMeasure = React.useCallback(() => {
         if (context == null) {
-            onLayout?.(event);
             return;
         }
         const anchorNode = anchorRef.current;
         const contentRootNode = context.contentRootRef.current;
         if (anchorNode == null || contentRootNode == null) {
             scheduleMeasure();
-            onLayout?.(event);
             return;
         }
         anchorNode.measureLayout(contentRootNode, (_left, top, _width, height) => {
@@ -221,16 +278,22 @@ function TopSheetAnchor({ name, onLayout, ...props }) {
         }, () => {
             scheduleMeasure();
         });
+    }, [context, name, scheduleMeasure]);
+    performMeasureRef.current = performMeasure;
+    const handleLayout = React.useCallback((event) => {
         onLayout?.(event);
-    }, [context, name, onLayout, scheduleMeasure]);
-    measureRef.current = measure;
+        if (context == null) {
+            return;
+        }
+        scheduleMeasure();
+    }, [context, onLayout, scheduleMeasure]);
     React.useEffect(() => {
         return () => {
             cancelPendingMeasure();
             context?.unregisterAnchor(name);
         };
     }, [cancelPendingMeasure, context, name]);
-    return (0, jsx_runtime_1.jsx)(react_native_1.View, { ...props, onLayout: measure, ref: anchorRef });
+    return (0, jsx_runtime_1.jsx)(react_native_1.View, { ...props, onLayout: handleLayout, ref: anchorRef });
 }
 function TopSheetScrollView({ alwaysBounceVertical = true, bounces = true, onScroll, scrollEnabled, scrollEventThrottle = 16, ...props }) {
     const context = React.useContext(TopSheetInternalContext);
@@ -263,16 +326,34 @@ function TopSheetScrollView({ alwaysBounceVertical = true, bounces = true, onScr
             if (context != null) {
                 context.scrollableOffsetY.value = Math.max(event.contentOffset.y, 0);
             }
-            if (onScrollRef.current != null) {
-                (0, react_native_reanimated_1.runOnJS)(onScrollRef.current)(event);
+            const callback = onScrollRef.current;
+            if (callback == null) {
+                return;
+            }
+            if (callback.__workletHash != null) {
+                callback(event);
+            }
+            else {
+                (0, react_native_reanimated_1.runOnJS)(callback)(event);
             }
         },
     }, [context, onScrollRef]);
+    const fallbackOnScroll = React.useMemo(() => {
+        if (onScroll == null) {
+            return undefined;
+        }
+        return (event) => {
+            onScroll(event.nativeEvent);
+        };
+    }, [onScroll]);
     const effectiveScrollEnabled = scrollEnabled ?? derivedScrollEnabled;
-    if (context == null) {
-        return ((0, jsx_runtime_1.jsx)(react_native_reanimated_1.default.ScrollView, { ...props, alwaysBounceVertical: alwaysBounceVertical, bounces: bounces, onScroll: onScroll, scrollEnabled: scrollEnabled, scrollEventThrottle: scrollEventThrottle }));
+    const sheetPanGesture = context?.sheetPanGesture;
+    const nativeGesture = React.useMemo(() => sheetPanGesture != null
+        ? react_native_gesture_handler_1.Gesture.Native().simultaneousWithExternalGesture(sheetPanGesture)
+        : null, [sheetPanGesture]);
+    if (context == null || nativeGesture == null) {
+        return ((0, jsx_runtime_1.jsx)(react_native_reanimated_1.default.ScrollView, { ...props, alwaysBounceVertical: alwaysBounceVertical, bounces: bounces, onScroll: fallbackOnScroll, scrollEnabled: scrollEnabled, scrollEventThrottle: scrollEventThrottle }));
     }
-    const nativeGesture = react_native_gesture_handler_1.Gesture.Native().simultaneousWithExternalGesture(context.sheetPanGesture);
     return ((0, jsx_runtime_1.jsx)(react_native_gesture_handler_1.GestureDetector, { gesture: nativeGesture, children: (0, jsx_runtime_1.jsx)(react_native_reanimated_1.default.ScrollView, { ...props, alwaysBounceVertical: alwaysBounceVertical, bounces: bounces, onScroll: handleScroll, scrollEnabled: effectiveScrollEnabled, scrollEventThrottle: scrollEventThrottle }) }));
 }
 exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false, applyContentInset = true, backdropColor = DEFAULT_BACKDROP_COLOR, backdropOpacity = DEFAULT_BACKDROP_OPACITY, backdropPressBehavior = "close", backdropStyle, bottomInset = 0, children, collapsedHeight, contentContainerStyle, contentTopInset = 0, cornerRadius = DEFAULT_CORNER_RADIUS, defaultOpen = true, detached = false, detachedPadding, dismissible = true, dragRegion = "sheet", fullScreenCornerRadius, handleColor = "rgba(255, 255, 255, 0.42)", handleStyle, handleVisible = true, initialSnapIndex = 0, onDismiss, onOpenChange, onSnapChange, open: controlledOpen, sheetStyle, snapPoints, style, }, ref) {
@@ -282,7 +363,9 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
     const [isVisible, setIsVisible] = React.useState(open);
     const [settledIndex, setSettledIndex] = React.useState(-1);
     const [contentHeight, setContentHeight] = React.useState(0);
-    const [anchors, setAnchors] = React.useState(() => new Map());
+    const anchorsRef = React.useRef(new Map());
+    const [anchorsVersion, setAnchorsVersion] = React.useState(0);
+    const pendingAnchorBumpRef = React.useRef(null);
     const dimensions = (0, react_native_1.useWindowDimensions)();
     const safeAreaInsets = (0, react_native_safe_area_context_1.useSafeAreaInsets)();
     const latestOpenChange = useLatestRef(onOpenChange);
@@ -301,10 +384,17 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
     const availableHeight = allowFullScreen
         ? dimensions.height
         : Math.max(dimensions.height - bottomInset, 0);
-    const requestedSnapPoints = React.useMemo(() => buildSnapPoints(snapPoints, collapsedHeight), [collapsedHeight, snapPoints]);
-    const requestedAnchorKeys = React.useMemo(() => requestedSnapPoints
-        .filter(isAnchorSnapPoint)
-        .map((snapPoint) => snapPoint.key), [requestedSnapPoints]);
+    const requestedSnapPoints = useStableRequestedSnapPoints(snapPoints, collapsedHeight);
+    const requestedAnchorKeys = React.useMemo(() => {
+        const keys = [];
+        for (let index = 0; index < requestedSnapPoints.length; index += 1) {
+            const snapPoint = requestedSnapPoints[index];
+            if (isAnchorSnapPoint(snapPoint)) {
+                keys.push(snapPoint.key);
+            }
+        }
+        return keys;
+    }, [requestedSnapPoints]);
     const hasAnchorSnapPoints = requestedAnchorKeys.length > 0;
     const needsContentMeasurement = React.useMemo(() => requestedSnapPoints.some((snapPoint) => snapPoint === "content"), [requestedSnapPoints]);
     const [anchorsSettled, setAnchorsSettled] = React.useState(!hasAnchorSnapPoints);
@@ -320,7 +410,8 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
             setAnchorsSettled(true);
             return;
         }
-        const allAnchorsRegistered = requestedAnchorKeys.every((key) => anchors.has(key));
+        const map = anchorsRef.current;
+        const allAnchorsRegistered = requestedAnchorKeys.every((key) => map.has(key));
         if (!allAnchorsRegistered) {
             setAnchorsSettled(false);
             return;
@@ -333,8 +424,9 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
         return () => {
             clearTimeout(timeoutId);
         };
-    }, [anchors, hasAnchorSnapPoints, requestedAnchorKeys]);
+    }, [anchorsVersion, hasAnchorSnapPoints, requestedAnchorKeys]);
     const resolvedSnapHeights = React.useMemo(() => {
+        const anchors = anchorsRef.current;
         const next = requestedSnapPoints
             .map((snapPoint) => {
             if (shouldDeferAnchorSnaps && isAnchorSnapPoint(snapPoint)) {
@@ -351,14 +443,13 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
         return result;
     }, [
         allowFullScreen,
-        anchors,
+        anchorsVersion,
         anchorsSettled,
         availableHeight,
         contentHeight,
         requestedSnapPoints,
         shouldDeferAnchorSnaps,
     ]);
-    const resolvedSnapHeightsKey = React.useMemo(() => resolvedSnapHeights.join("|"), [resolvedSnapHeights]);
     const initialIndex = React.useMemo(() => clampIndex(initialSnapIndex, Math.max(resolvedSnapHeights.length - 1, 0)), [initialSnapIndex, resolvedSnapHeights.length]);
     const currentHeight = (0, react_native_reanimated_1.useSharedValue)(0);
     const dismissOffset = (0, react_native_reanimated_1.useSharedValue)(0);
@@ -378,40 +469,46 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
     });
     const fullscreenRadius = fullScreenCornerRadius ?? (detached ? 0 : cornerRadius);
     const lowestSnapHeight = resolvedSnapHeights[0] ?? 0;
+    const highestSnapHeight = resolvedSnapHeights[resolvedSnapHeights.length - 1] ?? 0;
     React.useEffect(() => {
         isVisibleRef.current = isVisible;
     }, [isVisible]);
-    const registerAnchor = React.useCallback((name, layout) => {
-        setAnchors((current) => {
-            const previous = current.get(name);
-            if (previous != null &&
-                Math.abs(previous.y - layout.y) <= 0.5 &&
-                Math.abs(previous.height - layout.height) <= 0.5) {
-                return current;
-            }
-            if (previous != null &&
-                previous.height > 0 &&
-                layout.height <= 0) {
-                return current;
-            }
-            const next = new Map(current);
-            next.set(name, layout);
-            return next;
+    const scheduleAnchorVersionBump = React.useCallback(() => {
+        if (pendingAnchorBumpRef.current != null) {
+            return;
+        }
+        pendingAnchorBumpRef.current = requestAnimationFrame(() => {
+            pendingAnchorBumpRef.current = null;
+            setAnchorsVersion((current) => current + 1);
         });
     }, []);
+    const registerAnchor = React.useCallback((name, layout) => {
+        const map = anchorsRef.current;
+        const previous = map.get(name);
+        if (previous != null &&
+            Math.abs(previous.y - layout.y) <= 0.5 &&
+            Math.abs(previous.height - layout.height) <= 0.5) {
+            return;
+        }
+        if (previous != null &&
+            previous.height > 0 &&
+            layout.height <= 0) {
+            return;
+        }
+        map.set(name, layout);
+        scheduleAnchorVersionBump();
+    }, [scheduleAnchorVersionBump]);
     const unregisterAnchor = React.useCallback((name) => {
         if (initialAnchorSettleRef.current) {
             return;
         }
-        setAnchors((current) => {
-            if (!current.has(name)) {
-                return current;
-            }
-            const next = new Map(current);
-            next.delete(name);
-            return next;
-        });
-    }, []);
+        const map = anchorsRef.current;
+        if (!map.has(name)) {
+            return;
+        }
+        map.delete(name);
+        scheduleAnchorVersionBump();
+    }, [scheduleAnchorVersionBump]);
     const requestOpenChange = React.useCallback((nextOpen) => {
         if (!isControlled) {
             setUncontrolledOpen(nextOpen);
@@ -549,11 +646,6 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
     }), [animateToClosed, animateToIndex, initialIndex, requestOpenChange, resolvedSnapHeights.length]);
     React.useLayoutEffect(() => {
         snapHeights.value = resolvedSnapHeights;
-    }, [
-        resolvedSnapHeights,
-        snapHeights,
-    ]);
-    React.useLayoutEffect(() => {
         if (!open) {
             if (isVisibleRef.current) {
                 animateToClosed({
@@ -583,7 +675,8 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
         initialIndex,
         latestSettledIndex,
         open,
-        resolvedSnapHeightsKey,
+        resolvedSnapHeights,
+        snapHeights,
     ]);
     React.useEffect(() => {
         isMountedRef.current = true;
@@ -591,6 +684,10 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
             isMountedRef.current = false;
             (0, react_native_reanimated_1.cancelAnimation)(currentHeight);
             (0, react_native_reanimated_1.cancelAnimation)(dismissOffset);
+            if (pendingAnchorBumpRef.current != null) {
+                cancelAnimationFrame(pendingAnchorBumpRef.current);
+                pendingAnchorBumpRef.current = null;
+            }
         };
     }, [currentHeight, dismissOffset]);
     const handleContentLayout = React.useCallback((event) => {
@@ -778,9 +875,8 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
         snapHeights,
     ]);
     const animatedBackdropStyle = (0, react_native_reanimated_1.useAnimatedStyle)(() => {
-        const heights = snapHeights.value;
-        const maxHeight = interactiveMaxHeight.value;
-        const floorHeight = heights[0] ?? 0;
+        const maxHeight = highestSnapHeight;
+        const floorHeight = lowestSnapHeight;
         // Factor in dismiss slide offset for backdrop fade
         const effectiveHeight = Math.max(0, currentHeight.value - dismissOffset.value);
         let progress = 0;
@@ -804,105 +900,90 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
         return {
             opacity: backdropOpacity * progress,
         };
-    }, [backdropOpacity]);
+    }, [backdropOpacity, highestSnapHeight, lowestSnapHeight]);
+    const useDetachedMargins = detached && allowFullScreen;
+    const isDetached = detached;
+    const radiusDelta = cornerRadius - fullscreenRadius;
+    const detachedBottom = resolvedDetachedPadding.bottom;
+    const detachedLeft = resolvedDetachedPadding.left;
+    const detachedRight = resolvedDetachedPadding.right;
+    const detachedTop = resolvedDetachedPadding.top;
     const animatedSheetStyle = (0, react_native_reanimated_1.useAnimatedStyle)(() => {
-        const maxHeight = interactiveMaxHeight.value;
+        const maxHeight = highestSnapHeight;
         const minHeight = lowestSnapHeight;
         const morphRange = Math.max(maxHeight - minHeight, 1);
-        const morphProgress = detached && allowFullScreen
+        const morphProgress = useDetachedMargins
             ? (0, react_native_reanimated_1.clamp)((currentHeight.value - minHeight) / morphRange, 0, 1)
             : 0;
-        const topMargin = detached && allowFullScreen
-            ? resolvedDetachedPadding.top * (1 - morphProgress)
-            : detached
-                ? resolvedDetachedPadding.top
+        const marginScale = useDetachedMargins
+            ? 1 - morphProgress
+            : isDetached
+                ? 1
                 : 0;
-        const leftMargin = detached && allowFullScreen
-            ? resolvedDetachedPadding.left * (1 - morphProgress)
-            : detached
-                ? resolvedDetachedPadding.left
-                : 0;
-        const rightMargin = detached && allowFullScreen
-            ? resolvedDetachedPadding.right * (1 - morphProgress)
-            : detached
-                ? resolvedDetachedPadding.right
-                : 0;
-        const bottomMargin = detached && allowFullScreen
-            ? resolvedDetachedPadding.bottom * (1 - morphProgress)
-            : detached
-                ? resolvedDetachedPadding.bottom
-                : 0;
+        const radius = cornerRadius - radiusDelta * morphProgress;
+        const detachedRadius = isDetached ? radius : 0;
+        const heightDelta = !dismissible
+            ? minHeight - currentHeight.value
+            : 0;
         return {
-            borderBottomLeftRadius: cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress,
-            borderBottomRightRadius: cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress,
-            borderTopLeftRadius: detached
-                ? cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress
-                : 0,
-            borderTopRightRadius: detached
-                ? cornerRadius - (cornerRadius - fullscreenRadius) * morphProgress
-                : 0,
+            borderBottomLeftRadius: radius,
+            borderBottomRightRadius: radius,
+            borderTopLeftRadius: detachedRadius,
+            borderTopRightRadius: detachedRadius,
             height: currentHeight.value,
-            marginBottom: bottomMargin,
-            marginLeft: leftMargin,
-            marginRight: rightMargin,
-            marginTop: topMargin,
+            marginBottom: detachedBottom * marginScale,
+            marginLeft: detachedLeft * marginScale,
+            marginRight: detachedRight * marginScale,
+            marginTop: detachedTop * marginScale,
             shadowOpacity: 0.24 - 0.12 * morphProgress,
             transform: [
                 {
                     translateY: dismissOffset.value +
-                        (!dismissible && currentHeight.value < minHeight
-                            ? (minHeight - currentHeight.value) * 0.08
-                            : 0),
+                        (heightDelta > 0 ? heightDelta * 0.08 : 0),
                 },
             ],
         };
     }, [
-        allowFullScreen,
         cornerRadius,
-        detached,
+        detachedBottom,
+        detachedLeft,
+        detachedRight,
+        detachedTop,
         dismissible,
-        fullscreenRadius,
-        interactiveMaxHeight,
+        highestSnapHeight,
+        isDetached,
         lowestSnapHeight,
-        resolvedDetachedPadding.bottom,
-        resolvedDetachedPadding.left,
-        resolvedDetachedPadding.right,
-        resolvedDetachedPadding.top,
+        radiusDelta,
+        useDetachedMargins,
     ]);
     const topSafeArea = safeAreaInsets.top;
+    const handleAreaHeight = handleVisible ? DEFAULT_HANDLE_AREA_HEIGHT : 8;
+    const handleMorph = (0, react_native_reanimated_1.useDerivedValue)(() => {
+        if (!allowFullScreen) {
+            return 0;
+        }
+        const maxHeight = highestSnapHeight;
+        const minHeight = lowestSnapHeight;
+        const morphRange = Math.max(maxHeight - minHeight, 1);
+        return (0, react_native_reanimated_1.clamp)((currentHeight.value - minHeight) / morphRange, 0, 1);
+    });
     // Handle at top: fades in as sheet approaches fullscreen, includes safe area padding
     const animatedTopHandleStyle = (0, react_native_reanimated_1.useAnimatedStyle)(() => {
-        const maxHeight = interactiveMaxHeight.value;
-        const minHeight = lowestSnapHeight;
-        const morphRange = Math.max(maxHeight - minHeight, 1);
-        const handleMorph = allowFullScreen
-            ? (0, react_native_reanimated_1.clamp)((currentHeight.value - minHeight) / morphRange, 0, 1)
-            : 0;
-        const handleHeight = handleVisible
-            ? DEFAULT_HANDLE_AREA_HEIGHT
-            : 8;
+        const morph = handleMorph.value;
         return {
-            minHeight: handleMorph * (handleHeight + topSafeArea),
-            paddingTop: handleMorph * topSafeArea,
-            opacity: handleMorph,
+            minHeight: morph * (handleAreaHeight + topSafeArea),
+            paddingTop: morph * topSafeArea,
+            opacity: morph,
         };
-    }, [allowFullScreen, handleVisible, lowestSnapHeight, topSafeArea]);
+    }, [handleAreaHeight, topSafeArea]);
     // Handle at bottom: visible when collapsed, fades out approaching fullscreen
     const animatedBottomHandleStyle = (0, react_native_reanimated_1.useAnimatedStyle)(() => {
-        const maxHeight = interactiveMaxHeight.value;
-        const minHeight = lowestSnapHeight;
-        const morphRange = Math.max(maxHeight - minHeight, 1);
-        const handleMorph = allowFullScreen
-            ? (0, react_native_reanimated_1.clamp)((currentHeight.value - minHeight) / morphRange, 0, 1)
-            : 0;
-        const handleHeight = handleVisible
-            ? DEFAULT_HANDLE_AREA_HEIGHT
-            : 8;
+        const inverseMorph = 1 - handleMorph.value;
         return {
-            minHeight: (1 - handleMorph) * handleHeight,
-            opacity: 1 - handleMorph,
+            minHeight: inverseMorph * handleAreaHeight,
+            opacity: inverseMorph,
         };
-    }, [allowFullScreen, handleVisible, lowestSnapHeight]);
+    }, [handleAreaHeight]);
     const contextValue = React.useMemo(() => ({
         contentInsets,
         contentRootRef,
@@ -924,15 +1005,25 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
         unregisterAnchor,
     ]);
     const needsAnchorMeasurement = hasAnchorSnapPoints && open && resolvedSnapHeights.length === 0;
-    const shouldRenderMeasurement = needsContentMeasurement && open;
+    const shouldRenderMeasurement = needsContentMeasurement && open && contentHeight === 0;
     const shouldRenderSheet = isVisible && !needsAnchorMeasurement;
+    const backdropPressEnabled = dismissible && backdropPressBehavior === "close";
+    const handleBackdropPress = React.useCallback(() => {
+        if (!backdropPressEnabled) {
+            return;
+        }
+        animateToClosed();
+    }, [animateToClosed, backdropPressEnabled]);
+    const backdropBaseStyle = React.useMemo(() => [
+        react_native_1.StyleSheet.absoluteFillObject,
+        { backgroundColor: backdropColor },
+    ], [backdropColor]);
+    const backdropPointerEvents = isVisible && backdropPressBehavior === "close" ? "auto" : "none";
+    const handleIndicatorStyle = React.useMemo(() => [styles.handleIndicator, { backgroundColor: handleColor }], [handleColor]);
     if (!shouldRenderMeasurement && !shouldRenderSheet && !needsAnchorMeasurement) {
         return null;
     }
-    const handleIndicator = handleVisible ? ((0, jsx_runtime_1.jsx)(react_native_1.View, { style: [
-            styles.handleIndicator,
-            { backgroundColor: handleColor },
-        ] })) : null;
+    const handleIndicator = handleVisible ? ((0, jsx_runtime_1.jsx)(react_native_1.View, { style: handleIndicatorStyle })) : null;
     const topHandle = dragRegion === "handle" ? ((0, jsx_runtime_1.jsx)(react_native_gesture_handler_1.GestureDetector, { gesture: panGesture, children: (0, jsx_runtime_1.jsx)(react_native_reanimated_1.default.View, { style: [
                 styles.handleArea,
                 animatedTopHandleStyle,
@@ -998,19 +1089,7 @@ exports.TopSheet = React.forwardRef(function TopSheet({ allowFullScreen = false,
                             : null,
                         contentContainerStyle,
                     ], children: children }) }) }) })) : null;
-    return ((0, jsx_runtime_1.jsxs)(react_native_1.View, { pointerEvents: "box-none", style: [styles.root, style], children: [measurementContent, anchorMeasurementContent, (0, jsx_runtime_1.jsx)(AnimatedPressable, { onPress: () => {
-                    if (!dismissible || backdropPressBehavior !== "close") {
-                        return;
-                    }
-                    animateToClosed();
-                }, pointerEvents: isVisible && backdropPressBehavior === "close" ? "auto" : "none", style: [
-                    react_native_1.StyleSheet.absoluteFillObject,
-                    {
-                        backgroundColor: backdropColor,
-                    },
-                    animatedBackdropStyle,
-                    backdropStyle,
-                ] }), shouldRenderSheet
+    return ((0, jsx_runtime_1.jsxs)(react_native_1.View, { pointerEvents: "box-none", style: [styles.root, style], children: [measurementContent, anchorMeasurementContent, (0, jsx_runtime_1.jsx)(AnimatedPressable, { onPress: handleBackdropPress, pointerEvents: backdropPointerEvents, style: [backdropBaseStyle, animatedBackdropStyle, backdropStyle] }), shouldRenderSheet
                 ? dragRegion === "sheet"
                     ? (0, jsx_runtime_1.jsx)(react_native_gesture_handler_1.GestureDetector, { gesture: panGesture, children: content })
                     : content
@@ -1044,8 +1123,12 @@ const styles = react_native_1.StyleSheet.create({
         overflow: "hidden",
     },
     root: {
-        ...react_native_1.StyleSheet.absoluteFillObject,
+        bottom: 0,
         justifyContent: "flex-start",
+        left: 0,
+        position: "absolute",
+        right: 0,
+        top: 0,
     },
     sheet: {
         backgroundColor: "#101317",

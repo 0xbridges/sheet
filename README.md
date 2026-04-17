@@ -135,6 +135,8 @@ The string `"content"` measures the sheet content's natural height and uses it a
 snapPoints={["content", "72%"]}
 ```
 
+The natural content height is measured once per presentation in an off-screen container, then the measurement tree unmounts so children render exactly once. If your content can change size while the sheet is open, prefer pixel, percentage, or anchor snap points instead.
+
 ### Anchor snap points
 
 Anchor snap points are measured from `BottomSheetAnchor` marker views placed inside the sheet content. Each anchor produces a snap height equal to the anchor's bottom edge plus an optional offset.
@@ -379,6 +381,34 @@ function SheetContent() {
 
 Returns `{ bottom: number }` representing the content bottom inset (safe area + `contentBottomInset`). Use this to add padding inside `BottomSheetScrollView`.
 
+### `onScroll`
+
+`BottomSheetScrollView` / `TopSheetScrollView` accept an optional `onScroll` callback typed as `(event: NativeScrollEvent) => void` — the raw native event, not a `NativeSyntheticEvent` wrapper. Read offsets directly off the event:
+
+```tsx
+<BottomSheetScrollView
+  onScroll={(event) => {
+    console.log(event.contentOffset.y);
+  }}
+/>
+```
+
+Pass a Reanimated worklet to handle scroll on the UI thread with zero bridge crossings — recommended for parallax, sticky headers, and any per-frame work driven by scroll position:
+
+```tsx
+import { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
+
+const scrollY = useSharedValue(0);
+const handleScroll = useAnimatedScrollHandler((event) => {
+  "worklet";
+  scrollY.value = event.contentOffset.y;
+});
+
+<BottomSheetScrollView onScroll={handleScroll}>...</BottomSheetScrollView>;
+```
+
+A regular JS function still works; it will be invoked via `runOnJS` with one bridge crossing per scroll event.
+
 ## Detached Mode
 
 Detached sheets float above the bottom edge, rounded on all four corners.
@@ -611,6 +641,8 @@ It does the following:
 - uses spring animations with velocity projection for natural snapping
 - measures anchor positions in an off-screen container to avoid layout thrashing
 - debounces anchor registration to batch rapid layout changes
+- structurally caches `snapPoints` and `collapsedHeight` so inline arrays (e.g. `snapPoints={["50%", "content"]}`) don't cascade re-renders on every parent render
+- supports worklet `onScroll` handlers on the scroll view to skip the JS bridge during scroll
 
 For best results:
 
