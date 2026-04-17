@@ -12,95 +12,53 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { TopSheet, TopSheetRef } from "@0xbridges/sheet";
 
-const IOS_GREEN = "#30D158";
-const IOS_TEAL = "#64D2FF";
+const SHEET_BG = "#000000";
+const SHEET_FG = "#ffffff";
+const SHEET_MUTED = "rgba(255,255,255,0.55)";
+const SHEET_CHIP_BG = "rgba(255,255,255,0.08)";
+const SHEET_CHIP_BORDER = "rgba(255,255,255,0.14)";
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.sectionLabel}>{children}</Text>;
-}
-
-function Group({ children }: { children: React.ReactNode }) {
-  return <View style={styles.group}>{children}</View>;
-}
-
-function GroupRow({
-  children,
-  divider = false,
-}: {
-  children: React.ReactNode;
-  divider?: boolean;
-}) {
-  return (
-    <View style={[styles.groupRow, divider && styles.groupRowDivider]}>
-      {children}
-    </View>
-  );
-}
+const PAGE_BG = "#ffffff";
+const TILE_BG = "#f2f2f2";
+const TILE_LINE = "#d9d9d9";
+const TEXT_MUTED = "#8a8a8a";
+const TEXT_STRONG = "#111111";
 
 function SheetContent() {
   return (
     <View style={styles.sheetStack}>
-      <View style={styles.sheetHeader}>
-        <Text style={styles.sheetTitle}>DUPE</Text>
+      <View>
+        <Text style={styles.eyebrow}>embedded · top</Text>
+        <Text style={styles.sheetTitle}>Above.</Text>
         <Text style={styles.sheetSubtitle}>
-          detached · drag down to expand
+          A persistent top sheet that expands to fullscreen while the page
+          scrolls beneath.
         </Text>
       </View>
 
-      <View style={styles.sheetGroup}>
-        <GroupRow>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>Token price</Text>
-            <Text style={styles.rowDetail}>24h volume $1.2M</Text>
-          </View>
-          <Text style={[styles.sheetValue, { color: IOS_GREEN }]}>
-            $0.0203
-          </Text>
-        </GroupRow>
-        <GroupRow divider>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>24H change</Text>
-            <Text style={styles.rowDetail}>All-time high $0.041</Text>
-          </View>
-          <Text style={[styles.sheetValue, { color: IOS_GREEN }]}>
-            +11.73%
-          </Text>
-        </GroupRow>
-        <GroupRow divider>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>Market cap</Text>
-            <Text style={styles.rowDetail}>Rank #142 by believers</Text>
-          </View>
-          <Text style={styles.sheetValue}>$20.3M</Text>
-        </GroupRow>
-        <GroupRow divider>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>Community</Text>
-            <Text style={styles.rowDetail}>8,530 active believers</Text>
-          </View>
-          <Text style={[styles.sheetValue, { color: IOS_TEAL }]}>8.5K</Text>
-        </GroupRow>
-      </View>
-
-      <View style={styles.sheetGroup}>
-        <GroupRow>
-          <Text style={styles.rowLabel}>Claimed fees</Text>
-          <Text style={[styles.sheetValue, { color: IOS_GREEN }]}>
-            $564.4K
-          </Text>
-        </GroupRow>
-        <GroupRow divider>
-          <Text style={styles.rowLabel}>Created by</Text>
-          <Text style={styles.sheetValue}>Bobby Ghoshal</Text>
-        </GroupRow>
-        <GroupRow divider>
-          <Text style={styles.rowLabel}>Ticker</Text>
-          <Text style={styles.sheetValue}>DUPE</Text>
-        </GroupRow>
+      <View style={styles.chipRow}>
+        <View style={styles.chip}>
+          <Text style={styles.chipText}>detached</Text>
+        </View>
+        <View style={styles.chip}>
+          <Text style={styles.chipText}>drag down</Text>
+        </View>
+        <View style={styles.chip}>
+          <Text style={styles.chipText}>no backdrop</Text>
+        </View>
       </View>
     </View>
   );
 }
+
+const ROWS = [
+  { width: "72%" as const },
+  { width: "48%" as const },
+  { width: "64%" as const },
+  { width: "36%" as const },
+  { width: "58%" as const },
+  { width: "44%" as const },
+];
 
 export function EmbeddedTopSheetScreen() {
   const { height: screenHeight } = useWindowDimensions();
@@ -114,140 +72,27 @@ export function EmbeddedTopSheetScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: sheetCollapsedHeight + safeArea.top + 16 },
+          { paddingTop: sheetCollapsedHeight + safeArea.top + 24 },
         ]}
         showsVerticalScrollIndicator={false}
       >
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => [pressed && styles.pressed]}
+          style={({ pressed }) => [styles.back, pressed && styles.pressed]}
         >
-          <Text style={styles.backLabel}>{"← Back"}</Text>
+          <Text style={styles.backText}>Close</Text>
         </Pressable>
 
-        <SectionLabel>Trending</SectionLabel>
-        <Group>
-          <GroupRow>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>PEPE</Text>
-              <Text style={styles.rowDetail}>Pepe the Frog memecoin</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_GREEN }]}>
-              +24.1%
-            </Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>BONK</Text>
-              <Text style={styles.rowDetail}>Solana dog coin</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_GREEN }]}>
-              +18.7%
-            </Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>WIF</Text>
-              <Text style={styles.rowDetail}>dogwifhat</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: "#FF453A" }]}>
-              -3.2%
-            </Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>FLOKI</Text>
-              <Text style={styles.rowDetail}>Floki Inu</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_GREEN }]}>
-              +9.4%
-            </Text>
-          </GroupRow>
-        </Group>
-
-        <SectionLabel>Markets</SectionLabel>
-        <Group>
-          <GroupRow>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>SOL</Text>
-              <Text style={styles.rowDetail}>Solana · Layer 1</Text>
-            </View>
-            <Text style={styles.trendValue}>$178.42</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>ETH</Text>
-              <Text style={styles.rowDetail}>Ethereum · Layer 1</Text>
-            </View>
-            <Text style={styles.trendValue}>$3,241.80</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>BTC</Text>
-              <Text style={styles.rowDetail}>Bitcoin</Text>
-            </View>
-            <Text style={styles.trendValue}>$67,890.00</Text>
-          </GroupRow>
-        </Group>
-
-        <SectionLabel>Activity</SectionLabel>
-        <Group>
-          <GroupRow>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>Swap completed</Text>
-              <Text style={styles.rowDetail}>0.5 SOL → 24,631 DUPE</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>12s</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>Fee claimed</Text>
-              <Text style={styles.rowDetail}>LP position #4201</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>3m</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>Transfer received</Text>
-              <Text style={styles.rowDetail}>From bobby.sol</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>18m</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>Stake deposit</Text>
-              <Text style={styles.rowDetail}>Marinade Finance</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>1h</Text>
-          </GroupRow>
-        </Group>
-
-        <Group>
-          <GroupRow>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>LP position opened</Text>
-              <Text style={styles.rowDetail}>DUPE/SOL concentrated</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>2h</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>Swap completed</Text>
-              <Text style={styles.rowDetail}>2.1 SOL → 103,420 DUPE</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>5h</Text>
-          </GroupRow>
-          <GroupRow divider>
-            <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>NFT minted</Text>
-              <Text style={styles.rowDetail}>Believer Badge #421</Text>
-            </View>
-            <Text style={[styles.trendValue, { color: IOS_TEAL }]}>1d</Text>
-          </GroupRow>
-        </Group>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>End of page content</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Section</Text>
+          <View style={styles.card}>
+            {ROWS.map((row, index) => (
+              <View key={`line-${index}`} style={styles.lineRow}>
+                <View style={[styles.line, { width: row.width }]} />
+                {index < ROWS.length - 1 ? <View style={styles.divider} /> : null}
+              </View>
+            ))}
+          </View>
         </View>
       </ScrollView>
 
@@ -263,127 +108,144 @@ export function EmbeddedTopSheetScreen() {
         dismissible={false}
         dragRegion="sheet"
         fullScreenCornerRadius={0}
+        handleColor="rgba(255,255,255,0.35)"
         open
         ref={sheetRef}
         sheetStyle={styles.sheet}
         snapPoints={["42%"]}
       >
-        <SheetContent />
+        <View style={styles.sheetSurface}>
+          <SheetContent />
+        </View>
       </TopSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  backLabel: {
-    color: IOS_TEAL,
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  content: {
-    gap: 18,
-    paddingBottom: 48,
+  back: {
+    alignSelf: "flex-start",
+    borderColor: "#e5e5e5",
+    borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  footer: {
-    alignItems: "center",
-    paddingVertical: 24,
-  },
-  footerText: {
-    color: "#3A3A3C",
+  backText: {
+    color: TEXT_STRONG,
     fontSize: 13,
-    fontWeight: "500",
-  },
-  group: {
-    backgroundColor: "#1C1C1E",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  groupRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  groupRowDivider: {
-    borderTopColor: "#2C2C2E",
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  pressed: {
-    opacity: 0.72,
-  },
-  rowCopy: {
-    flex: 1,
-    gap: 4,
-    paddingRight: 16,
-  },
-  rowDetail: {
-    color: "#8E8E93",
-    fontSize: 13,
-    lineHeight: 17,
-  },
-  rowLabel: {
-    color: "#FFFFFF",
-    fontSize: 16,
     fontWeight: "600",
     letterSpacing: -0.2,
   },
+  card: {
+    backgroundColor: TILE_BG,
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+  },
+  chip: {
+    backgroundColor: SHEET_CHIP_BG,
+    borderColor: SHEET_CHIP_BORDER,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  chipText: {
+    color: SHEET_FG,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  content: {
+    gap: 24,
+    paddingBottom: 64,
+    paddingHorizontal: 20,
+  },
+  divider: {
+    backgroundColor: "#e6e6e6",
+    height: 1,
+    marginTop: 16,
+  },
+  eyebrow: {
+    color: SHEET_MUTED,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.6,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+  },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  line: {
+    backgroundColor: TILE_LINE,
+    borderRadius: 3,
+    height: 6,
+  },
+  lineRow: {
+    paddingVertical: 16,
+  },
+  pressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.98 }],
+  },
   screen: {
-    backgroundColor: "#000000",
+    backgroundColor: PAGE_BG,
     flex: 1,
   },
+  section: {
+    gap: 12,
+  },
   sectionLabel: {
-    color: "#8E8E93",
-    fontSize: 13,
+    color: TEXT_MUTED,
+    fontSize: 11,
     fontWeight: "600",
-    letterSpacing: -0.1,
+    letterSpacing: 1.4,
     paddingHorizontal: 4,
+    textTransform: "uppercase",
   },
   sheet: {
-    backgroundColor: "#111214",
+    backgroundColor: SHEET_BG,
   },
   sheetContentFill: {
     flex: 1,
   },
-  sheetGroup: {
-    backgroundColor: "#1C1C1E",
-    borderRadius: 16,
-    marginHorizontal: 16,
-    marginTop: 18,
-    overflow: "hidden",
-  },
-  sheetHeader: {
-    gap: 4,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
   sheetStack: {
-    gap: 0,
+    gap: 20,
   },
   sheetSubtitle: {
-    color: "#8E8E93",
-    fontSize: 14,
-    lineHeight: 18,
+    color: SHEET_MUTED,
+    fontSize: 15,
+    fontWeight: "400",
+    letterSpacing: -0.2,
+    lineHeight: 21,
+    maxWidth: 320,
+    paddingTop: 8,
+  },
+  sheetSurface: {
+    gap: 18,
+    paddingHorizontal: 24,
+    paddingTop: 20,
   },
   sheetTitle: {
-    color: "#FFFFFF",
-    fontSize: 28,
+    color: SHEET_FG,
+    fontSize: 44,
     fontWeight: "700",
-    letterSpacing: -0.7,
+    letterSpacing: -1.8,
+    lineHeight: 46,
   },
-  sheetValue: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
-    textAlign: "right",
-  },
-  trendValue: {
-    color: "#8E8E93",
-    fontSize: 15,
-    fontWeight: "500",
-    maxWidth: "48%",
-    textAlign: "right",
+  tile: {
+    aspectRatio: 1,
+    backgroundColor: TILE_BG,
+    borderRadius: 20,
+    flexBasis: "47%",
+    flexGrow: 1,
   },
 });

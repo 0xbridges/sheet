@@ -279,10 +279,15 @@ function resolveSnapPoint(
   snapPoint: TopSheetSnapPoint,
   availableHeight: number,
   contentHeight: number,
-  anchors: ReadonlyMap<string, AnchorLayout>
+  anchors: ReadonlyMap<string, AnchorLayout>,
+  handleAreaHeight: number
 ) {
   if (snapPoint === "content") {
-    return contentHeight;
+    // While unmeasured, return 0 so this snap is filtered out by
+    // `uniqueHeights`. Once measured, add the handle area so the snap height
+    // matches the sheet's natural size at the lowest morph state — content +
+    // bottom handle (the top handle has fully collapsed at "content" snap).
+    return contentHeight > 0 ? contentHeight + handleAreaHeight : 0;
   }
 
   if (typeof snapPoint === "number") {
@@ -780,6 +785,8 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       };
     }, [anchorsVersion, hasAnchorSnapPoints, requestedAnchorKeys]);
 
+    const handleAreaHeight = handleVisible ? DEFAULT_HANDLE_AREA_HEIGHT : 8;
+
     const resolvedSnapHeights = React.useMemo(() => {
       const anchors = anchorsRef.current;
       const next = requestedSnapPoints
@@ -788,7 +795,13 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
             return 0;
           }
 
-          return resolveSnapPoint(snapPoint, availableHeight, contentHeight, anchors);
+          return resolveSnapPoint(
+            snapPoint,
+            availableHeight,
+            contentHeight,
+            anchors,
+            handleAreaHeight
+          );
         })
         .map((height) => clamp(height, 0, availableHeight));
 
@@ -806,6 +819,7 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       anchorsSettled,
       availableHeight,
       contentHeight,
+      handleAreaHeight,
       requestedSnapPoints,
       shouldDeferAnchorSnaps,
     ]);
@@ -1100,6 +1114,16 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
         return;
       }
 
+      // Hold the present animation while we still need a content measurement.
+      // The sheet itself is mounted so children can be measured in-place via
+      // the content View's onLayout (see `isMeasuringContent` below). Without
+      // this gate the present spring would target a non-content snap on the
+      // first frame and re-target once contentHeight lands — costing a
+      // wasted spring + a few dropped frames during the present.
+      if (needsContentMeasurement && contentHeight === 0) {
+        return;
+      }
+
       if (animationTargetRef.current?.type === "closed") {
         return;
       }
@@ -1117,8 +1141,10 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
     }, [
       animateToClosed,
       animateToIndex,
+      contentHeight,
       initialIndex,
       latestSettledIndex,
+      needsContentMeasurement,
       open,
       resolvedSnapHeights,
       snapHeights,
@@ -1479,7 +1505,6 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
     ]);
 
     const topSafeArea = safeAreaInsets.top;
-    const handleAreaHeight = handleVisible ? DEFAULT_HANDLE_AREA_HEIGHT : 8;
 
     const handleMorph = useDerivedValue(() => {
       if (!allowFullScreen) {
@@ -1539,9 +1564,13 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
 
     const needsAnchorMeasurement =
       hasAnchorSnapPoints && open && resolvedSnapHeights.length === 0;
-    const shouldRenderMeasurement =
-      needsContentMeasurement && open && contentHeight === 0;
+    // The sheet itself can mount even while we still need a content
+    // measurement — the content View measures its own intrinsic height
+    // in-place via onLayout (see `isMeasuringContent` below) instead of
+    // through a duplicate off-screen subtree. This saves one render commit
+    // and a children mount/unmount/mount cycle on every present.
     const shouldRenderSheet = isVisible && !needsAnchorMeasurement;
+    const isMeasuringContent = needsContentMeasurement && contentHeight === 0;
 
     const backdropPressEnabled =
       dismissible && backdropPressBehavior === "close";
@@ -1567,7 +1596,7 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
       [handleColor]
     );
 
-    if (!shouldRenderMeasurement && !shouldRenderSheet && !needsAnchorMeasurement) {
+    if (!shouldRenderSheet && !needsAnchorMeasurement) {
       return null;
     }
 
@@ -1625,17 +1654,24 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
 
     const content = (
       <Animated.View
-        pointerEvents="auto"
+        pointerEvents={isMeasuringContent ? "none" : "auto"}
         style={[
           styles.sheet,
-          animatedSheetStyle,
+          // While measuring we let the sheet size to its natural intrinsic
+          // height so Yoga can measure (top handle + content + bottom handle)
+          // correctly. We hide it with opacity:0 and take it out of the flex
+          // flow via absolute positioning so it doesn't briefly flash at
+          // full size and doesn't affect the root container. Once
+          // contentHeight lands, the normal animated style takes over and
+          // the present animation runs from 0 to the resolved snap.
+          isMeasuringContent ? styles.sheetMeasuring : animatedSheetStyle,
           sheetStyle,
         ]}
       >
         {topHandle}
         <TopSheetInternalContext.Provider value={contextValue}>
           <View
-            onLayout={needsContentMeasurement ? undefined : handleContentLayout}
+            onLayout={isMeasuringContent ? handleContentLayout : undefined}
             ref={contentRootRef}
             style={[
               styles.content,
@@ -1653,39 +1689,6 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
         {bottomHandle}
       </Animated.View>
     );
-
-    const measurementContent = shouldRenderMeasurement ? (
-      <View pointerEvents="none" style={styles.measurementRoot}>
-        <TopSheetInternalContext.Provider value={contextValue}>
-          <View
-            style={[
-              styles.measurementSheet,
-              detached
-                ? {
-                    marginLeft: resolvedDetachedPadding.left,
-                    marginRight: resolvedDetachedPadding.right,
-                  }
-                : null,
-            ]}
-          >
-            <View
-              onLayout={handleContentLayout}
-              style={[
-                styles.content,
-                applyContentInset
-                  ? {
-                      paddingTop: contentInsets.top,
-                    }
-                  : null,
-                contentContainerStyle,
-              ]}
-            >
-              {children}
-            </View>
-          </View>
-        </TopSheetInternalContext.Provider>
-      </View>
-    ) : null;
 
     const anchorMeasurementContent = needsAnchorMeasurement ? (
       <View pointerEvents="none" style={styles.measurementRoot}>
@@ -1722,7 +1725,6 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
 
     return (
       <View pointerEvents="box-none" style={[styles.root, style]}>
-        {measurementContent}
         {anchorMeasurementContent}
         <AnimatedPressable
           onPress={handleBackdropPress}
@@ -1741,6 +1743,7 @@ export const TopSheet = React.forwardRef<TopSheetRef, TopSheetProps>(
 
 const styles = StyleSheet.create({
   content: {
+    flexGrow: 1,
     flexShrink: 1,
     gap: 0,
   },
@@ -1783,5 +1786,13 @@ const styles = StyleSheet.create({
       width: 0,
     },
     shadowRadius: 24,
+  },
+  sheetMeasuring: {
+    left: 0,
+    opacity: 0,
+    pointerEvents: "none",
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
 });

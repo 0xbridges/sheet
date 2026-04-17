@@ -87,6 +87,7 @@ const BottomSheetInternalContext =
 
 export type BottomSheetInsets = {
   bottom: number;
+  top: number;
 };
 
 export type BottomSheetAnchorPoint = Readonly<{
@@ -131,6 +132,15 @@ export type BottomSheetProps = {
   contentBottomInset?: number;
   contentContainerStyle?: StyleProp<ViewStyle>;
   cornerRadius?: number;
+  /**
+   * When `allowFullScreen` is true, allow the sheet to extend past the top
+   * safe-area inset and cover the status bar / dynamic island. Defaults to
+   * `false`, which clamps the sheet to the top safe-area edge.
+   *
+   * Use {@link useBottomSheetInsets} to read `top` and pad your content so it
+   * is not occluded by the status bar.
+   */
+  coverStatusBar?: boolean;
   defaultOpen?: boolean;
   detached?: boolean;
   detachedPadding?: BottomSheetDetachedPadding;
@@ -285,10 +295,15 @@ function resolveSnapPoint(
   snapPoint: BottomSheetSnapPoint,
   availableHeight: number,
   contentHeight: number,
-  anchors: ReadonlyMap<string, AnchorLayout>
+  anchors: ReadonlyMap<string, AnchorLayout>,
+  handleAreaHeight: number
 ) {
   if (snapPoint === "content") {
-    return contentHeight;
+    // Returning 0 while we don't yet have a measurement keeps the value out
+    // of `uniqueHeights` (which filters non-positive). Once measured, add the
+    // handle area so the snap height matches the sheet's actual natural size
+    // (handle + content) instead of just the children's intrinsic height.
+    return contentHeight > 0 ? contentHeight + handleAreaHeight : 0;
   }
 
   if (typeof snapPoint === "number") {
@@ -479,6 +494,7 @@ export function createBottomSheetAnchor(
 export function useBottomSheetInsets() {
   return React.useContext(BottomSheetInternalContext)?.contentInsets ?? {
     bottom: 0,
+    top: 0,
   };
 }
 
@@ -691,6 +707,7 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
       contentBottomInset = 0,
       contentContainerStyle,
       cornerRadius = DEFAULT_CORNER_RADIUS,
+      coverStatusBar = false,
       defaultOpen = true,
       detached = false,
       detachedPadding,
@@ -743,12 +760,15 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
     const contentInsets = React.useMemo(
       () => ({
         bottom: contentBottomInset + safeAreaInsets.bottom,
+        top: coverStatusBar ? safeAreaInsets.top : 0,
       }),
-      [contentBottomInset, safeAreaInsets.bottom]
+      [contentBottomInset, coverStatusBar, safeAreaInsets.bottom, safeAreaInsets.top]
     );
 
     const topBoundaryInset = allowFullScreen
-      ? Math.max(topInset, safeAreaInsets.top)
+      ? coverStatusBar
+        ? topInset
+        : Math.max(topInset, safeAreaInsets.top)
       : topInset;
     const availableHeight = Math.max(dimensions.height - topBoundaryInset, 0);
     const requestedSnapPoints = useStableRequestedSnapPoints(
@@ -813,6 +833,8 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
       };
     }, [anchorsVersion, hasAnchorSnapPoints, requestedAnchorKeys]);
 
+    const handleAreaHeight = handleVisible ? DEFAULT_HANDLE_AREA_HEIGHT : 8;
+
     const resolvedSnapHeights = React.useMemo(() => {
       const anchors = anchorsRef.current;
       const next = requestedSnapPoints
@@ -821,7 +843,13 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
             return 0;
           }
 
-          return resolveSnapPoint(snapPoint, availableHeight, contentHeight, anchors);
+          return resolveSnapPoint(
+            snapPoint,
+            availableHeight,
+            contentHeight,
+            anchors,
+            handleAreaHeight
+          );
         })
         .map((height) => clamp(height, 0, availableHeight));
 
@@ -839,6 +867,7 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
       anchorsSettled,
       availableHeight,
       contentHeight,
+      handleAreaHeight,
       requestedSnapPoints,
       shouldDeferAnchorSnaps,
     ]);
@@ -1116,6 +1145,16 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
         return;
       }
 
+      // Hold the present animation while we still need a content measurement.
+      // The sheet itself is mounted so children can be measured in-place via
+      // the content View's onLayout (see `isMeasuringContent` below). Without
+      // this gate the present spring would target a non-content snap (e.g.
+      // "72%") on the first frame and re-target once contentHeight lands —
+      // costing a wasted spring + a few dropped frames during the present.
+      if (needsContentMeasurement && contentHeight === 0) {
+        return;
+      }
+
       if (animationTargetRef.current?.type === "closed") {
         return;
       }
@@ -1133,8 +1172,10 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
     }, [
       animateToClosed,
       animateToIndex,
+      contentHeight,
       initialIndex,
       latestSettledIndex,
+      needsContentMeasurement,
       open,
       resolvedSnapHeights,
       snapHeights,
@@ -1400,9 +1441,13 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
 
     const needsAnchorMeasurement =
       hasAnchorSnapPoints && open && resolvedSnapHeights.length === 0;
-    const shouldRenderMeasurement =
-      needsContentMeasurement && open && contentHeight === 0;
+    // The sheet itself can mount even while we still need a content
+    // measurement — the content View measures its own intrinsic height
+    // in-place via onLayout (see `isMeasuringContent` below) instead of
+    // through a duplicate off-screen subtree. This saves one render commit
+    // and a children mount/unmount/mount cycle on every present.
     const shouldRenderSheet = isVisible && !needsAnchorMeasurement;
+    const isMeasuringContent = needsContentMeasurement && contentHeight === 0;
 
     const backdropPressEnabled =
       dismissible && backdropPressBehavior === "close";
@@ -1428,7 +1473,39 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
       [handleColor]
     );
 
-    if (!shouldRenderMeasurement && !shouldRenderSheet && !needsAnchorMeasurement) {
+    const safeAreaTop = safeAreaInsets.top;
+    const windowHeight = dimensions.height;
+    const animatedHandleStyle = useAnimatedStyle(() => {
+      if (!coverStatusBar || safeAreaTop <= 0) {
+        return { paddingTop: 0 };
+      }
+      const maxHeight = highestSnapHeight;
+      const minHeight = lowestSnapHeight;
+      const morphRange = Math.max(maxHeight - minHeight, 1);
+      const morphProgress = useDetachedMargins
+        ? clamp((currentHeight.value - minHeight) / morphRange, 0, 1)
+        : 0;
+      const marginScale = useDetachedMargins
+        ? 1 - morphProgress
+        : isDetached
+          ? 1
+          : 0;
+      const currentMarginBottom = detachedBottom * marginScale;
+      const sheetTopY = windowHeight - currentHeight.value - currentMarginBottom;
+      const overlap = clamp(safeAreaTop - sheetTopY, 0, safeAreaTop);
+      return { paddingTop: overlap };
+    }, [
+      coverStatusBar,
+      detachedBottom,
+      highestSnapHeight,
+      isDetached,
+      lowestSnapHeight,
+      safeAreaTop,
+      useDetachedMargins,
+      windowHeight,
+    ]);
+
+    if (!shouldRenderSheet && !needsAnchorMeasurement) {
       return null;
     }
 
@@ -1438,6 +1515,7 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
           style={[
             styles.handleArea,
             !handleVisible && styles.hiddenHandleArea,
+            animatedHandleStyle,
             handleStyle,
           ]}
         >
@@ -1449,6 +1527,7 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
         style={[
           styles.handleArea,
           !handleVisible && styles.hiddenHandleArea,
+          animatedHandleStyle,
           handleStyle,
         ]}
       >
@@ -1458,17 +1537,24 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
 
     const content = (
       <Animated.View
-        pointerEvents="auto"
+        pointerEvents={isMeasuringContent ? "none" : "auto"}
         style={[
           styles.sheet,
-          animatedSheetStyle,
+          // While measuring we let the sheet size to its natural intrinsic
+          // height so Yoga can measure (handle + content) correctly. We hide
+          // it with opacity:0 and take it out of the flex flow via absolute
+          // positioning so it doesn't briefly flash at full size, and so
+          // its layout doesn't affect the root container. Once contentHeight
+          // lands, the normal animated style takes over and the present
+          // animation runs from 0 to the resolved "content" snap.
+          isMeasuringContent ? styles.sheetMeasuring : animatedSheetStyle,
           sheetStyle,
         ]}
       >
         {handle}
         <BottomSheetInternalContext.Provider value={contextValue}>
           <View
-            onLayout={needsContentMeasurement ? undefined : handleContentLayout}
+            onLayout={isMeasuringContent ? handleContentLayout : undefined}
             ref={contentRootRef}
             style={[
               styles.content,
@@ -1485,39 +1571,6 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
         </BottomSheetInternalContext.Provider>
       </Animated.View>
     );
-
-    const measurementContent = shouldRenderMeasurement ? (
-      <View pointerEvents="none" style={styles.measurementRoot}>
-        <BottomSheetInternalContext.Provider value={contextValue}>
-          <View
-            style={[
-              styles.measurementSheet,
-              detached
-                ? {
-                    marginLeft: resolvedDetachedPadding.left,
-                    marginRight: resolvedDetachedPadding.right,
-                  }
-                : null,
-            ]}
-          >
-            <View
-              onLayout={handleContentLayout}
-              style={[
-                styles.content,
-                applyContentInset
-                  ? {
-                      paddingBottom: contentInsets.bottom,
-                    }
-                  : null,
-                contentContainerStyle,
-              ]}
-            >
-              {children}
-            </View>
-          </View>
-        </BottomSheetInternalContext.Provider>
-      </View>
-    ) : null;
 
     const anchorMeasurementContent = needsAnchorMeasurement ? (
       <View pointerEvents="none" style={styles.measurementRoot}>
@@ -1554,7 +1607,6 @@ export const BottomSheet = React.forwardRef<BottomSheetRef, BottomSheetProps>(
 
     return (
       <View pointerEvents="box-none" style={[styles.root, style]}>
-        {measurementContent}
         {anchorMeasurementContent}
         <AnimatedPressable
           onPress={handleBackdropPress}
@@ -1618,5 +1670,13 @@ const styles = StyleSheet.create({
       width: 0,
     },
     shadowRadius: 24,
+  },
+  sheetMeasuring: {
+    left: 0,
+    opacity: 0,
+    pointerEvents: "none",
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
 });

@@ -1,67 +1,26 @@
 import { router } from "expo-router";
 import * as React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { BottomSheet, BottomSheetRef } from "@0xbridges/sheet";
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.sectionLabel}>{children}</Text>;
-}
+const SHEET_BG = "#000000";
+const SHEET_FG = "#ffffff";
+const SHEET_MUTED = "rgba(255,255,255,0.55)";
+const SHEET_CHIP_BG = "rgba(255,255,255,0.08)";
+const SHEET_CHIP_BORDER = "rgba(255,255,255,0.14)";
 
-function Group({ children }: { children: React.ReactNode }) {
-  return <View style={styles.group}>{children}</View>;
-}
+const PAGE_BG = "#ffffff";
+const TEXT_STRONG = "#111111";
+const TEXT_MUTED = "#7a7a7a";
+const BORDER = "#e5e5e5";
 
-function GroupRow({
-  children,
-  divider = false,
-}: {
-  children: React.ReactNode;
-  divider?: boolean;
-}) {
+function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <View style={[styles.groupRow, divider && styles.groupRowDivider]}>
-      {children}
+    <View style={styles.chip}>
+      <Text style={styles.chipText}>{children}</Text>
     </View>
-  );
-}
-
-function ActionRow({
-  detail,
-  label,
-  onPress,
-}: {
-  detail: string;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
-      <GroupRow divider>
-        <View style={styles.rowCopy}>
-          <Text style={styles.rowLabel}>{label}</Text>
-          <Text style={styles.rowDetail}>{detail}</Text>
-        </View>
-      </GroupRow>
-    </Pressable>
-  );
-}
-
-function InfoRow({
-  divider = false,
-  label,
-  value,
-}: {
-  divider?: boolean;
-  label: string;
-  value: string;
-}) {
-  return (
-    <GroupRow divider={divider}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
-    </GroupRow>
   );
 }
 
@@ -74,50 +33,17 @@ function SheetContent({
 }) {
   return (
     <View style={styles.sheetStack}>
-      <View style={styles.sheetHeader}>
-        <Text style={styles.sheetTitle}>Modal Sheet</Text>
-        <Text style={styles.sheetSummary}>stack modal route · 280 pt / 72%</Text>
+      <View>
+        <Text style={styles.eyebrow}>modal route</Text>
+        <Text style={styles.sheetTitle}>Nested</Text>
+        <Text style={styles.sheetSubtitle}>sheet inside a stack modal</Text>
       </View>
 
-      <View style={styles.group}>
-        <GroupRow>
-          <Text style={styles.rowLabel}>Current height</Text>
-          <Text style={styles.modalAccentValue}>{`${Math.round(currentHeight)} pt`}</Text>
-        </GroupRow>
-        <GroupRow divider>
-          <Text style={styles.rowLabel}>Snap index</Text>
-          <Text style={styles.rowValue}>
-            {currentSnapIndex >= 0 ? `${currentSnapIndex}` : "closed"}
-          </Text>
-        </GroupRow>
-        <GroupRow divider>
-          <Text style={styles.rowLabel}>Presentation</Text>
-          <Text style={styles.rowValue}>stack modal</Text>
-        </GroupRow>
-      </View>
-
-      <View style={styles.group}>
-        <GroupRow>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>Review summary</Text>
-            <Text style={styles.rowDetail}>Last update 2m ago</Text>
-          </View>
-          <Text style={styles.modalAccentValue}>ready</Text>
-        </GroupRow>
-        <GroupRow divider>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>Line items</Text>
-            <Text style={styles.rowDetail}>Primary flow for nested modal testing</Text>
-          </View>
-          <Text style={styles.rowValue}>12</Text>
-        </GroupRow>
-        <GroupRow divider>
-          <View style={styles.rowCopy}>
-            <Text style={styles.rowLabel}>Owner</Text>
-            <Text style={styles.rowDetail}>Navigation test surface</Text>
-          </View>
-          <Text style={styles.rowValue}>GT</Text>
-        </GroupRow>
+      <View style={styles.chipRow}>
+        <Chip>
+          {currentSnapIndex >= 0 ? `snap ${currentSnapIndex}` : "closed"}
+        </Chip>
+        <Chip>{`${Math.round(currentHeight)} pt`}</Chip>
       </View>
     </View>
   );
@@ -129,105 +55,70 @@ export function ModalSheetScreen() {
   const [currentSnapIndex, setCurrentSnapIndex] = React.useState(-1);
   const sheetRef = React.useRef<BottomSheetRef | null>(null);
 
-  const openBase = React.useCallback(() => {
-    if (!isOpen) {
-      setIsOpen(true);
-      return;
-    }
-
-    sheetRef.current?.snapToIndex(0);
-  }, [isOpen]);
-
-  const openMax = React.useCallback(() => {
-    if (!isOpen) {
-      setIsOpen(true);
-      requestAnimationFrame(() => {
-        sheetRef.current?.expand();
-      });
-      return;
-    }
-
-    sheetRef.current?.expand();
-  }, [isOpen]);
-
-  const closeSheet = React.useCallback(() => {
-    sheetRef.current?.dismiss();
-  }, []);
-
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={["top"]} style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>Modal Route</Text>
-            <Text style={styles.subtitle}>stack modal with embedded bottom sheet</Text>
+        <View style={styles.content}>
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+          >
+            <Text style={styles.backText}>Close</Text>
+          </Pressable>
+
+          <View style={styles.headline}>
+            <Text style={styles.kicker}>modal stack</Text>
+            <Text style={styles.title}>Sheet inside a modal.</Text>
+            <Text style={styles.subtitle}>
+              The route itself presents as a modal, with a bottom sheet composed on top.
+            </Text>
           </View>
 
-          <SectionLabel>Route</SectionLabel>
-          <Group>
-            <InfoRow label="Presentation" value="modal" />
-            <InfoRow divider label="Sheet open" value={isOpen ? "yes" : "no"} />
-            <InfoRow
-              divider
-              label="Sheet height"
-              value={`${Math.round(currentHeight)} pt`}
-            />
-            <InfoRow
-              divider
-              label="Snap index"
-              value={currentSnapIndex >= 0 ? `${currentSnapIndex}` : "closed"}
-            />
-          </Group>
-
-          <SectionLabel>Actions</SectionLabel>
-          <Group>
+          <View style={styles.actions}>
             <Pressable
-              onPress={openBase}
-              style={({ pressed }) => [pressed && styles.pressed]}
-            >
-              <GroupRow>
-                <View style={styles.rowCopy}>
-                  <Text style={styles.rowLabel}>Open at base</Text>
-                  <Text style={styles.rowDetail}>280 pt</Text>
-                </View>
-              </GroupRow>
-            </Pressable>
-            <ActionRow
-              detail="72% stop"
-              label="Open at max"
-              onPress={openMax}
-            />
-            <ActionRow
-              detail="dismiss()"
-              label="Close sheet"
-              onPress={closeSheet}
-            />
-            <ActionRow
-              detail="router.back()"
-              label="Dismiss modal"
               onPress={() => {
-                router.back();
+                if (!isOpen) {
+                  setIsOpen(true);
+                  return;
+                }
+                sheetRef.current?.snapToIndex(0);
               }}
-            />
-          </Group>
-
-          <SectionLabel>Background</SectionLabel>
-          <Group>
-            <InfoRow label="Context" value="This route itself is modal." />
-            <InfoRow divider label="Use case" value="sheet inside modal stack" />
-            <InfoRow divider label="Backdrop" value="sheet dims modal content" />
-          </Group>
-        </ScrollView>
+              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+            >
+              <Text style={styles.actionText}>Base</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                if (!isOpen) {
+                  setIsOpen(true);
+                  requestAnimationFrame(() => sheetRef.current?.expand());
+                  return;
+                }
+                sheetRef.current?.expand();
+              }}
+              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+            >
+              <Text style={styles.actionText}>Max</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => sheetRef.current?.dismiss()}
+              style={({ pressed }) => [
+                styles.action,
+                styles.actionGhost,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.actionText, styles.actionTextGhost]}>Close sheet</Text>
+            </Pressable>
+          </View>
+        </View>
       </SafeAreaView>
 
       <BottomSheet
-        backdropOpacity={0.28}
+        backdropOpacity={0.22}
+        handleColor="rgba(255,255,255,0.35)"
         onOpenChange={(nextOpen) => {
           setIsOpen(nextOpen);
-
           if (!nextOpen) {
             setCurrentHeight(0);
             setCurrentSnapIndex(-1);
@@ -239,120 +130,152 @@ export function ModalSheetScreen() {
         }}
         open={isOpen}
         ref={sheetRef}
-        snapPoints={[280, "72%"]}
+        sheetStyle={styles.sheet}
+        snapPoints={[260, "72%"]}
       >
-        <SheetContent
-          currentHeight={currentHeight}
-          currentSnapIndex={currentSnapIndex}
-        />
+        <View style={styles.sheetSurface}>
+          <SheetContent
+            currentHeight={currentHeight}
+            currentSnapIndex={currentSnapIndex}
+          />
+        </View>
       </BottomSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    gap: 18,
-    paddingBottom: 48,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  group: {
-    backgroundColor: "#1C1C1E",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  groupRow: {
+  action: {
     alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 56,
-    paddingHorizontal: 16,
+    backgroundColor: TEXT_STRONG,
+    borderRadius: 999,
+    paddingHorizontal: 24,
     paddingVertical: 14,
   },
-  groupRowDivider: {
-    borderTopColor: "#2C2C2E",
-    borderTopWidth: StyleSheet.hairlineWidth,
+  actionGhost: {
+    backgroundColor: "transparent",
+    borderColor: BORDER,
+    borderWidth: 1,
   },
-  header: {
-    gap: 2,
-    paddingTop: 4,
-  },
-  modalAccentValue: {
-    color: "#64D2FF",
-    fontSize: 15,
-    fontWeight: "600",
-    maxWidth: "48%",
-    textAlign: "right",
-  },
-  pressed: {
-    opacity: 0.72,
-  },
-  rowCopy: {
-    flex: 1,
-    gap: 4,
-    paddingRight: 16,
-  },
-  rowDetail: {
-    color: "#8E8E93",
-    fontSize: 13,
-    lineHeight: 17,
-  },
-  rowLabel: {
-    color: "#FFFFFF",
-    fontSize: 16,
+  actionText: {
+    color: "#ffffff",
+    fontSize: 14,
     fontWeight: "600",
     letterSpacing: -0.2,
   },
-  rowValue: {
-    color: "#8E8E93",
-    fontSize: 15,
+  actionTextGhost: {
+    color: TEXT_STRONG,
+  },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  back: {
+    alignSelf: "flex-start",
+    borderColor: BORDER,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  backText: {
+    color: TEXT_STRONG,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: -0.2,
+  },
+  chip: {
+    backgroundColor: SHEET_CHIP_BG,
+    borderColor: SHEET_CHIP_BORDER,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  chipText: {
+    color: SHEET_FG,
+    fontSize: 13,
     fontWeight: "500",
-    maxWidth: "48%",
-    textAlign: "right",
+  },
+  content: {
+    flex: 1,
+    gap: 28,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+  },
+  eyebrow: {
+    color: SHEET_MUTED,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.6,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+  },
+  headline: {
+    gap: 8,
+  },
+  kicker: {
+    color: TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+  },
+  pressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.98 }],
   },
   safeArea: {
     flex: 1,
   },
   screen: {
-    backgroundColor: "#333",
+    backgroundColor: PAGE_BG,
     flex: 1,
   },
-  sectionLabel: {
-    color: "#8E8E93",
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: -0.1,
-    paddingHorizontal: 4,
-  },
-  sheetHeader: {
-    gap: 4,
+  sheet: {
+    backgroundColor: SHEET_BG,
   },
   sheetStack: {
-    gap: 18,
-    paddingHorizontal: 16,
-    paddingTop: 10,
+    gap: 20,
   },
-  sheetSummary: {
-    color: "#8E8E93",
-    fontSize: 14,
-    lineHeight: 18,
+  sheetSubtitle: {
+    color: SHEET_MUTED,
+    fontSize: 15,
+    fontWeight: "400",
+    letterSpacing: -0.2,
+    lineHeight: 21,
+    paddingTop: 6,
+  },
+  sheetSurface: {
+    gap: 18,
+    paddingHorizontal: 24,
+    paddingTop: 18,
   },
   sheetTitle: {
-    color: "#FFFFFF",
-    fontSize: 28,
+    color: SHEET_FG,
+    fontSize: 40,
     fontWeight: "700",
-    letterSpacing: -0.7,
+    letterSpacing: -1.6,
+    lineHeight: 44,
   },
   subtitle: {
-    color: "#8E8E93",
+    color: TEXT_MUTED,
     fontSize: 15,
-    fontWeight: "500",
+    fontWeight: "400",
+    letterSpacing: -0.2,
+    lineHeight: 21,
+    maxWidth: 320,
   },
   title: {
-    color: "#FFFFFF",
-    fontSize: 34,
+    color: TEXT_STRONG,
+    fontSize: 40,
     fontWeight: "700",
-    letterSpacing: -1,
+    letterSpacing: -1.6,
+    lineHeight: 44,
   },
 });

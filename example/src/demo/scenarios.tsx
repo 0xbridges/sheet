@@ -1,10 +1,5 @@
 import * as React from "react";
-import {
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import {
   BottomSheetAnchor,
@@ -17,6 +12,40 @@ import {
   useTopSheetInsets,
 } from "@0xbridges/sheet";
 
+export type Pastel = {
+  bg: string;
+  accent: string;
+  chip: string;
+  chipText: string;
+};
+
+export const PASTELS = {
+  mint: { bg: "#D4F1DF", accent: "#0B7F4A", chip: "#BFE9D0", chipText: "#0B7F4A" },
+  peach: { bg: "#FFD9C4", accent: "#C5541F", chip: "#FFC8AC", chipText: "#C5541F" },
+  sky: { bg: "#D0E6FF", accent: "#1E60C2", chip: "#B8D8FF", chipText: "#1E60C2" },
+  lavender: { bg: "#E3D7FD", accent: "#6439C9", chip: "#D2C3FB", chipText: "#6439C9" },
+  rose: { bg: "#FFD2DF", accent: "#B72E57", chip: "#FFC1D3", chipText: "#B72E57" },
+  butter: { bg: "#FFEFB4", accent: "#8F6A0E", chip: "#FCE599", chipText: "#8F6A0E" },
+  coral: { bg: "#FFCDBE", accent: "#B53F23", chip: "#FFBCA8", chipText: "#B53F23" },
+  sage: { bg: "#DCEBCD", accent: "#5A7A36", chip: "#CCE0B8", chipText: "#5A7A36" },
+  lilac: { bg: "#F3D3F5", accent: "#9A34A8", chip: "#EAC1EC", chipText: "#9A34A8" },
+  aqua: { bg: "#C8ECE9", accent: "#1C7A74", chip: "#B4E1DD", chipText: "#1C7A74" },
+  blossom: { bg: "#FFD9E4", accent: "#AA3361", chip: "#FFC7D6", chipText: "#AA3361" },
+  sand: { bg: "#F3E4C6", accent: "#8E6413", chip: "#EAD6A7", chipText: "#8E6413" },
+  cloud: { bg: "#DCE8F2", accent: "#3B6A8E", chip: "#C6D9E7", chipText: "#3B6A8E" },
+} as const satisfies Record<string, Pastel>;
+
+export type PastelKey = keyof typeof PASTELS;
+
+const SHEET_BG = "#000000";
+const SHEET_FG = "#ffffff";
+const SHEET_MUTED = "rgba(255,255,255,0.55)";
+const SHEET_CHIP_BG = "rgba(255,255,255,0.08)";
+const SHEET_CHIP_BORDER = "rgba(255,255,255,0.14)";
+const SHEET_HANDLE = "rgba(255,255,255,0.35)";
+
+const sheetStyleBlack = { backgroundColor: SHEET_BG };
+
 type ScenarioSheetProps = Pick<
   BottomSheetProps,
   | "allowFullScreen"
@@ -26,6 +55,7 @@ type ScenarioSheetProps = Pick<
   | "collapsedHeight"
   | "contentContainerStyle"
   | "cornerRadius"
+  | "coverStatusBar"
   | "detached"
   | "detachedPadding"
   | "dismissible"
@@ -37,18 +67,6 @@ type ScenarioSheetProps = Pick<
   | "snapPoints"
 >;
 
-type ScenarioInfoRow = {
-  label: string;
-  value: string;
-};
-
-type DataRow = {
-  detail?: string;
-  label: string;
-  value: string;
-  valueColor?: string;
-};
-
 export type BottomSheetScenarioRenderContext = {
   currentHeight: number;
   currentSnapIndex: number;
@@ -57,8 +75,8 @@ export type BottomSheetScenarioRenderContext = {
 
 export type BottomSheetScenarioDefinition = {
   accent: string;
+  pastel: Pastel;
   id: string;
-  infoRows: ScenarioInfoRow[];
   renderContent: (
     context: BottomSheetScenarioRenderContext
   ) => React.ReactNode;
@@ -67,124 +85,60 @@ export type BottomSheetScenarioDefinition = {
   title: string;
 };
 
-const IOS_BLUE = "#0A84FF";
-const IOS_GREEN = "#30D158";
-const IOS_ORANGE = "#FF9F0A";
-const IOS_RED = "#FF453A";
-const IOS_TEAL = "#64D2FF";
+const overviewAnchor = createBottomSheetAnchor("anchor-overview", { offset: 20 });
+const actionsAnchor = createBottomSheetAnchor("anchor-actions", { offset: 20 });
+const paymentAnchor = createBottomSheetAnchor("anchor-payment", { offset: 20 });
 
-const overviewAnchor = createBottomSheetAnchor("anchor-overview", {
-  offset: 18,
-});
-const actionsAnchor = createBottomSheetAnchor("anchor-actions", {
-  offset: 18,
-});
-const paymentAnchor = createBottomSheetAnchor("anchor-payment", {
-  offset: 18,
-});
-
-const ACTIVITY_LOG = [
-  ["00:14", "Checkout latency alert", "payments-api / us-east-1"],
-  ["00:11", "Fallback processor enabled", "rerouted 14% of traffic"],
-  ["00:09", "New merchant report", "three failed retries"],
-  ["00:06", "Canary deploy completed", "release 2026.04.13.7"],
-  ["00:04", "Synthetic check passed", "eu-west-1"],
-  ["00:02", "Queue depth normalized", "primary database"],
-  ["23:58", "Refund job resumed", "batch 44021"],
-  ["23:54", "Runbook linked", "ops/payments/p1"],
-  ["23:49", "Error budget breached", "below 99.1%"],
-  ["23:42", "Escalation sent", "payments on-call"],
-];
-
-function SheetHeader({
-  summary,
-  title,
-}: {
-  summary: string;
-  title: string;
-}) {
+function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>{title}</Text>
-      <Text style={styles.headerSummary}>{summary}</Text>
+    <View style={styles.chip}>
+      <Text style={styles.chipText}>{children}</Text>
     </View>
   );
 }
 
-function Section({
-  rows,
-  title,
-}: {
-  rows: DataRow[];
-  title: string;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.group}>
-        {rows.map((row, index) => (
-          <View
-            key={`${title}-${row.label}-${index}`}
-            style={[styles.groupRow, index > 0 && styles.groupRowDivider]}
-          >
-            <View style={styles.groupCopy}>
-              <Text style={styles.rowLabel}>{row.label}</Text>
-              {row.detail ? <Text style={styles.rowDetail}>{row.detail}</Text> : null}
-            </View>
-            <Text
-              style={[
-                styles.rowValue,
-                row.valueColor ? { color: row.valueColor } : null,
-              ]}
-            >
-              {row.value}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
+function SheetSurface({ children }: { children: React.ReactNode }) {
+  return <View style={styles.surface}>{children}</View>;
 }
 
-function RuntimeSection({
-  accent,
+function ChipsRow({
   context,
-  extraRows = [],
 }: {
-  accent: string;
-  context: BottomSheetScenarioRenderContext;
-  extraRows?: DataRow[];
+  context: BottomSheetScenarioRenderContext | TopSheetScenarioRenderContext;
 }) {
-  const insets = useBottomSheetInsets();
-  const { height: viewportHeight } = useWindowDimensions();
-
   return (
-    <Section
-      rows={[
-        {
-          label: "Current height",
-          value: `${Math.round(context.currentHeight)} pt`,
-          valueColor: accent,
-        },
-        {
-          label: "Snap index",
-          value:
-            context.currentSnapIndex >= 0
-              ? `${context.currentSnapIndex}`
-              : "closed",
-        },
-        {
-          label: "Bottom safe area",
-          value: `${Math.round(insets.bottom)} pt`,
-        },
-        {
-          label: "Viewport height",
-          value: `${Math.round(viewportHeight)} pt`,
-        },
-        ...extraRows,
-      ]}
-      title="Runtime"
-    />
+    <View style={styles.chipRow}>
+      <Chip>
+        {context.currentSnapIndex >= 0
+          ? `snap ${context.currentSnapIndex}`
+          : "closed"}
+      </Chip>
+      <Chip>{`${Math.round(context.currentHeight)} pt`}</Chip>
+    </View>
+  );
+}
+
+function SheetBody({
+  context,
+  subtitle,
+  tagline,
+  title,
+}: {
+  context: BottomSheetScenarioRenderContext | TopSheetScenarioRenderContext;
+  subtitle: string;
+  tagline: string;
+  title: string;
+}) {
+  return (
+    <View style={styles.bodyStack}>
+      <View style={styles.bodyHeader}>
+        <Text style={styles.eyebrow}>{tagline}</Text>
+        <Text style={styles.sheetTitle}>{title}</Text>
+        <Text style={styles.sheetSubtitle}>{subtitle}</Text>
+      </View>
+
+      <ChipsRow context={context} />
+    </View>
   );
 }
 
@@ -194,43 +148,14 @@ function DynamicContentExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="attached · content / 72% / safe-area ceiling"
-        title="Dynamic Content"
-      />
-      <RuntimeSection
-        accent={IOS_BLUE}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Measured rows", value: "3" },
-          { label: "Dismiss", value: "swipe + backdrop" },
-        ]}
+        subtitle="content · 72% · full"
+        tagline="attached"
+        title="Dynamic"
       />
-      <Section
-        rows={[
-          {
-            detail: "Legal review pending · updated 6m ago",
-            label: "Northwind annual renewal",
-            value: "$18.4k",
-            valueColor: IOS_BLUE,
-          },
-          {
-            detail: "Finance sign-off required · due today",
-            label: "Warehouse hardware purchase",
-            value: "$9.2k",
-            valueColor: IOS_BLUE,
-          },
-          {
-            detail: "Export already generated",
-            label: "Q2 analytics archive",
-            value: "ready",
-            valueColor: IOS_GREEN,
-          },
-        ]}
-        title="Pending approvals"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -240,43 +165,14 @@ function FixedHeightExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader summary="detached · 318 pt" title="Fixed Height" />
-      <RuntimeSection
-        accent={IOS_ORANGE}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Target height", value: "318 pt", valueColor: IOS_ORANGE },
-          { label: "Detached padding", value: "14 pt" },
-        ]}
+        subtitle="detached · 318 pt"
+        tagline="floating"
+        title="Fixed"
       />
-      <Section
-        rows={[
-          {
-            detail: "Review mode stays on until 08:00",
-            label: "Focus mode",
-            value: "active",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Current board link copied",
-            label: "Share session",
-            value: "01:12 ago",
-          },
-          {
-            detail: "Muted for shipping project",
-            label: "Notifications",
-            value: "08:00",
-          },
-          {
-            detail: "Current selection only",
-            label: "Export CSV",
-            value: "214 rows",
-          },
-        ]}
-        title="Utilities"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -286,51 +182,14 @@ function PercentageSnapExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="attached · 32% / 56% / 84%"
-        title="Percentage Snaps"
-      />
-      <RuntimeSection
-        accent={IOS_TEAL}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Snap set", value: "32 / 56 / 84%" },
-          { label: "Dismiss", value: "swipe + backdrop" },
-        ]}
+        subtitle="32% · 56% · 84%"
+        tagline="percent snaps"
+        title="Percent"
       />
-      <Section
-        rows={[
-          {
-            detail: "Fast-moving stock in the last 48 hours",
-            label: "$0 - $50",
-            value: "124",
-            valueColor: IOS_TEAL,
-          },
-          {
-            detail: "Largest inventory bucket",
-            label: "$50 - $150",
-            value: "381",
-            valueColor: IOS_TEAL,
-          },
-          {
-            detail: "Lower inventory premium range",
-            label: "$150+",
-            value: "64",
-            valueColor: IOS_TEAL,
-          },
-        ]}
-        title="Price bands"
-      />
-      <Section
-        rows={[
-          { label: "In stock", value: "on", valueColor: IOS_GREEN },
-          { label: "Free shipping", value: "on", valueColor: IOS_GREEN },
-          { label: "Same day", value: "off" },
-        ]}
-        title="Filter state"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -340,73 +199,22 @@ function AnchorSnapExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="attached · 3 measured anchors / full"
-        title="Anchor Snaps"
-      />
-      <RuntimeSection
-        accent={IOS_GREEN}
-        context={context}
-        extraRows={[
-          { label: "Anchor count", value: "3", valueColor: IOS_GREEN },
-          { label: "Dismiss", value: "swipe + backdrop" },
-        ]}
-      />
+    <SheetSurface>
       <BottomSheetAnchor name="anchor-overview">
-        <Section
-          rows={[
-            {
-              detail: "Team plan · annual billing",
-              label: "Workspace subscription",
-              value: "$96.00",
-            },
-            {
-              detail: "18 new editors",
-              label: "Seat expansion",
-              value: "$144.00",
-            },
-          ]}
-          title="Order summary"
-        />
+        <Text style={styles.eyebrow}>anchor snaps</Text>
       </BottomSheetAnchor>
+
       <BottomSheetAnchor name="anchor-actions">
-        <Section
-          rows={[
-            {
-              detail: "Provision immediately after payment",
-              label: "Instant provisioning",
-              value: "default",
-              valueColor: IOS_BLUE,
-            },
-            {
-              detail: "Manual approval queue",
-              label: "Review fallback",
-              value: "available",
-            },
-          ]}
-          title="Fulfillment"
-        />
+        <View style={styles.bodyHeader}>
+          <Text style={styles.sheetTitle}>Anchors</Text>
+          <Text style={styles.sheetSubtitle}>snap to any element</Text>
+        </View>
       </BottomSheetAnchor>
+
       <BottomSheetAnchor name="anchor-payment">
-        <Section
-          rows={[
-            {
-              detail: "Corporate card · expires 11/27",
-              label: "Visa ending 2048",
-              value: "default",
-              valueColor: IOS_BLUE,
-            },
-            {
-              detail: "Settlement up to one business day",
-              label: "Bank transfer",
-              value: "available",
-            },
-          ]}
-          title="Payment"
-        />
+        <ChipsRow context={context} />
       </BottomSheetAnchor>
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -416,46 +224,14 @@ function DetachedCardExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader summary="detached · 46%" title="Detached Card" />
-      <RuntimeSection
-        accent={IOS_BLUE}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Detached padding", value: "16 pt" },
-          { label: "Dismiss", value: "swipe + backdrop" },
-        ]}
+        subtitle="detached · 46%"
+        tagline="card"
+        title="Detached"
       />
-      <Section
-        rows={[
-          {
-            detail: "Portable LED task lamp",
-            label: "Product",
-            value: "SKU 0412",
-          },
-          {
-            detail: "Ships tomorrow",
-            label: "Stock",
-            value: "24",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Matte black finish",
-            label: "Price",
-            value: "$129",
-            valueColor: IOS_BLUE,
-          },
-        ]}
-        title="Inventory"
-      />
-      <Section
-        rows={[
-          { detail: "Battery-backed", label: "Run time", value: "18 hrs" },
-          { detail: "Warm / neutral / daylight", label: "Presets", value: "3" },
-        ]}
-        title="Specs"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -464,55 +240,21 @@ function DetachedToFullscreenExample({
 }: {
   context: BottomSheetScenarioRenderContext;
 }) {
+  const insets = useBottomSheetInsets();
+
   return (
-    <View style={[styles.stack, styles.fill]}>
-      <SheetHeader
-        summary="detached · 46% / safe-area ceiling"
-        title="Detached To Fullscreen"
-      />
-      <RuntimeSection
-        accent={IOS_TEAL}
+    <View
+      style={[
+        styles.surface,
+        styles.fill,
+        { backgroundColor: SHEET_BG, paddingTop: 16 + insets.top },
+      ]}
+    >
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Top ceiling", value: "safe area" },
-          { label: "Corner morph", value: "live" },
-        ]}
-      />
-      <Section
-        rows={[
-          {
-            detail: "payments-api / production",
-            label: "Incident",
-            value: "P1",
-            valueColor: IOS_RED,
-          },
-          {
-            detail: "Checkout error rate climbed from 0.7% to 4.3%",
-            label: "Current signal",
-            value: "10m",
-          },
-          {
-            detail: "Fallback processor healthy",
-            label: "Mitigation",
-            value: "active",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Nine merchants impacted",
-            label: "Affected merchants",
-            value: "9",
-          },
-        ]}
-        title="Incident detail"
-      />
-      <View style={styles.fillSpacer} />
-      <Section
-        rows={[
-          { label: "Owner", value: "GT" },
-          { label: "Next review", value: "00:20" },
-          { label: "Escalation room", value: "payments-p1" },
-        ]}
-        title="Response"
+        subtitle="46% · edge-to-edge fullscreen"
+        tagline="detached → full"
+        title="Morph"
       />
     </View>
   );
@@ -524,42 +266,14 @@ function NonDismissableExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="attached · 220 pt / 56% · rubber-band floor"
-        title="Non-dismissible"
-      />
-      <RuntimeSection
-        accent={IOS_ORANGE}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Dismiss", value: "disabled", valueColor: IOS_ORANGE },
-          { label: "Backdrop tap", value: "ignored" },
-        ]}
+        subtitle="220 pt · 56% · rubber-band"
+        tagline="non-dismissible"
+        title="Locked"
       />
-      <Section
-        rows={[
-          {
-            detail: "Primary notification channel",
-            label: "ops@northwind.com",
-            value: "verified",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Fallback SMS for lockouts",
-            label: "Phone ending 12",
-            value: "pending",
-            valueColor: IOS_ORANGE,
-          },
-          {
-            detail: "Print and store offline",
-            label: "Backup codes",
-            value: "new",
-          },
-        ]}
-        title="Recovery methods"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -569,49 +283,14 @@ function CollapsiblePeekExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="attached · 136 pt peek / 48% / 84%"
-        title="Collapsible Peek"
-      />
-      <RuntimeSection
-        accent={IOS_BLUE}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Peek height", value: "136 pt", valueColor: IOS_BLUE },
-          { label: "Dismiss", value: "disabled" },
-        ]}
+        subtitle="136 pt peek · 48% · 84%"
+        tagline="no backdrop"
+        title="Peek"
       />
-      <Section
-        rows={[
-          {
-            detail: "231 Harbor Ave",
-            label: "Warehouse 12",
-            value: "12 min",
-            valueColor: IOS_BLUE,
-          },
-          {
-            detail: "Open until 22:00",
-            label: "Dock queue",
-            value: "low",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Three pickup windows available",
-            label: "Next slot",
-            value: "20:00",
-          },
-        ]}
-        title="Location"
-      />
-      <Section
-        rows={[
-          { label: "Directions", value: "ready", valueColor: IOS_GREEN },
-          { label: "Call desk", value: "+1 415 555 0123" },
-        ]}
-        title="Actions"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -621,43 +300,14 @@ function WorkflowSnapsExample({
   context: BottomSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="attached · 160 pt / 336 pt / 72% / full"
-        title="Workflow Snaps"
-      />
-      <RuntimeSection
-        accent={IOS_BLUE}
+    <SheetSurface>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Steps", value: "3" },
-          { label: "Order", value: "R-183042", valueColor: IOS_BLUE },
-        ]}
+        subtitle="160 · 336 · 72% · full"
+        tagline="workflow"
+        title="Steps"
       />
-      <Section
-        rows={[
-          {
-            detail: "Validate SLA, account flags, and totals",
-            label: "01  Review order",
-            value: "ready",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Choose carrier, warehouse, and dispatch window",
-            label: "02  Route shipment",
-            value: "dock B",
-            valueColor: IOS_BLUE,
-          },
-          {
-            detail: "Generate confirmation and send summary",
-            label: "03  Finalize handoff",
-            value: "pending",
-            valueColor: IOS_ORANGE,
-          },
-        ]}
-        title="Routing"
-      />
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -673,331 +323,190 @@ function ScrollableFullscreenExample({
       contentContainerStyle={[
         styles.scrollContent,
         {
+          backgroundColor: SHEET_BG,
           paddingBottom: insets.bottom + 20,
         },
       ]}
       showsVerticalScrollIndicator={false}
+      style={{ backgroundColor: SHEET_BG }}
     >
-      <SheetHeader
-        summary="attached · 48% / 82% / full · content drag"
-        title="Scrollable Fullscreen"
-      />
-      <RuntimeSection
-        accent={IOS_GREEN}
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Entries", value: `${ACTIVITY_LOG.length}` },
-          { label: "Drag region", value: "content" },
-        ]}
+        subtitle="48% · 82% · full · content drag"
+        tagline="scrollable"
+        title="Scroll"
       />
-      <Section
-        rows={ACTIVITY_LOG.map(([time, label, detail]) => ({
-          detail,
-          label,
-          value: time,
-          valueColor: IOS_GREEN,
-        }))}
-        title="Activity log"
-      />
+      <View style={styles.scrollSpacer} />
     </BottomSheetScrollView>
   );
 }
 
-function createScenarioDefinitions(): BottomSheetScenarioDefinition[] {
-  return [
-    {
-      accent: IOS_BLUE,
-      id: "dynamic-content",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Snaps", value: "content / 72% / full" },
-        { label: "Dismiss", value: "swipe + backdrop" },
-      ],
-      renderContent: (context) => <DynamicContentExample context={context} />,
-      sheetProps: {
-        allowFullScreen: true,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["content", "72%"],
-      },
-      summary: "attached · content / 72% / full",
-      title: "Dynamic Content",
+export const BOTTOM_SHEET_SCENARIOS: BottomSheetScenarioDefinition[] = [
+  {
+    accent: PASTELS.sky.accent,
+    pastel: PASTELS.sky,
+    id: "dynamic-content",
+    renderContent: (context) => <DynamicContentExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["content", "72%"],
     },
-    {
-      accent: IOS_ORANGE,
-      id: "fixed-height",
-      infoRows: [
-        { label: "Mode", value: "detached" },
-        { label: "Height", value: "318 pt" },
-        { label: "Padding", value: "14 pt" },
-      ],
-      renderContent: (context) => <FixedHeightExample context={context} />,
-      sheetProps: {
-        detached: true,
-        detachedPadding: {
-          bottom: 14,
-          horizontal: 14,
-        },
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: [318],
-      },
-      summary: "detached · 318 pt",
-      title: "Fixed Height",
+    summary: "content · 72% · full",
+    title: "Dynamic",
+  },
+  {
+    accent: PASTELS.peach.accent,
+    pastel: PASTELS.peach,
+    id: "fixed-height",
+    renderContent: (context) => <FixedHeightExample context={context} />,
+    sheetProps: {
+      cornerRadius: 56,
+      detached: true,
+      detachedPadding: { bottom: 24, horizontal: 14 },
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: [318],
     },
-    {
-      accent: IOS_TEAL,
-      id: "percentage-snaps",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Snaps", value: "32% / 56% / 84%" },
-        { label: "Dismiss", value: "swipe + backdrop" },
-      ],
-      renderContent: (context) => <PercentageSnapExample context={context} />,
-      sheetProps: {
-        initialSnapIndex: 1,
-        sheetStyle: styles.sheet,
-        snapPoints: ["32%", "56%", "84%"],
-      },
-      summary: "attached · 32% / 56% / 84%",
-      title: "Percentage Snaps",
+    summary: "detached · 318 pt",
+    title: "Fixed",
+  },
+  {
+    accent: PASTELS.aqua.accent,
+    pastel: PASTELS.aqua,
+    id: "percentage-snaps",
+    renderContent: (context) => <PercentageSnapExample context={context} />,
+    sheetProps: {
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 1,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["32%", "56%", "84%"],
     },
-    {
-      accent: IOS_GREEN,
-      id: "anchor-snaps",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Anchors", value: "overview / fulfillment / payment" },
-        { label: "Ceiling", value: "full" },
-      ],
-      renderContent: (context) => <AnchorSnapExample context={context} />,
-      sheetProps: {
-        allowFullScreen: true,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: [overviewAnchor, actionsAnchor, paymentAnchor],
-      },
-      summary: "attached · 3 measured anchors / full",
-      title: "Anchor Snaps",
+    summary: "32% · 56% · 84%",
+    title: "Percent",
+  },
+  {
+    accent: PASTELS.mint.accent,
+    pastel: PASTELS.mint,
+    id: "anchor-snaps",
+    renderContent: (context) => <AnchorSnapExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 2,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: [overviewAnchor, actionsAnchor, paymentAnchor],
     },
-    {
-      accent: IOS_BLUE,
-      id: "detached-card",
-      infoRows: [
-        { label: "Mode", value: "detached" },
-        { label: "Snap", value: "46%" },
-        { label: "Padding", value: "16 pt" },
-      ],
-      renderContent: (context) => <DetachedCardExample context={context} />,
-      sheetProps: {
-        detached: true,
-        detachedPadding: {
-          bottom: 16,
-          horizontal: 16,
-        },
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["46%"],
-      },
-      summary: "detached · 46%",
-      title: "Detached Card",
+    summary: "3 measured anchors · full",
+    title: "Anchors",
+  },
+  {
+    accent: PASTELS.lavender.accent,
+    pastel: PASTELS.lavender,
+    id: "detached-card",
+    renderContent: (context) => <DetachedCardExample context={context} />,
+    sheetProps: {
+      detached: true,
+      detachedPadding: { bottom: 24, horizontal: 16 },
+      handleColor: SHEET_HANDLE,
+      cornerRadius: 56,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["46%"],
     },
-    {
-      accent: IOS_TEAL,
-      id: "detached-fullscreen",
-      infoRows: [
-        { label: "Mode", value: "detached to fullscreen" },
-        { label: "Base", value: "46%" },
-        { label: "Top ceiling", value: "safe area" },
-      ],
-      renderContent: (context) => (
-        <DetachedToFullscreenExample context={context} />
-      ),
-      sheetProps: {
-        allowFullScreen: true,
-        contentContainerStyle: styles.fill,
-        detached: true,
-        detachedPadding: {
-          bottom: 12,
-          horizontal: 12,
-        },
-        fullScreenCornerRadius: 0,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["46%"],
-      },
-      summary: "detached · 46% / safe-area ceiling",
-      title: "Detached To Fullscreen",
+    summary: "detached · 46%",
+    title: "Card",
+  },
+  {
+    accent: PASTELS.butter.accent,
+    pastel: PASTELS.butter,
+    id: "detached-fullscreen",
+    renderContent: (context) => <DetachedToFullscreenExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      contentContainerStyle: { flex: 1 },
+      cornerRadius: 56,
+      coverStatusBar: true,
+      detached: true,
+      detachedPadding: { bottom: 20, horizontal: 12 },
+      fullScreenCornerRadius: 0,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["46%"],
     },
-    {
-      accent: IOS_ORANGE,
-      id: "non-dismissible",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Snaps", value: "220 pt / 56%" },
-        { label: "Dismiss", value: "disabled" },
-      ],
-      renderContent: (context) => <NonDismissableExample context={context} />,
-      sheetProps: {
-        dismissible: false,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: [220, "56%"],
-      },
-      summary: "attached · 220 pt / 56% · rubber-band floor",
-      title: "Non-dismissible",
+    summary: "46% · edge-to-edge fullscreen",
+    title: "Morph",
+  },
+  {
+    accent: PASTELS.coral.accent,
+    pastel: PASTELS.coral,
+    id: "non-dismissible",
+    renderContent: (context) => <NonDismissableExample context={context} />,
+    sheetProps: {
+      dismissible: false,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: [220, "56%"],
     },
-    {
-      accent: IOS_BLUE,
-      id: "collapsible-peek",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Peek", value: "136 pt" },
-        { label: "Backdrop", value: "none" },
-      ],
-      renderContent: (context) => <CollapsiblePeekExample context={context} />,
-      sheetProps: {
-        backdropOpacity: 0,
-        backdropPressBehavior: "none",
-        collapsedHeight: 136,
-        dismissible: false,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["48%", "84%"],
-      },
-      summary: "attached · 136 pt peek / 48% / 84% · no backdrop",
-      title: "Collapsible Peek",
+    summary: "220 pt · 56% · rubber-band",
+    title: "Locked",
+  },
+  {
+    accent: PASTELS.lilac.accent,
+    pastel: PASTELS.lilac,
+    id: "collapsible-peek",
+    renderContent: (context) => <CollapsiblePeekExample context={context} />,
+    sheetProps: {
+      backdropOpacity: 0,
+      backdropPressBehavior: "none",
+      collapsedHeight: 136,
+      dismissible: false,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["48%", "84%"],
     },
-    {
-      accent: IOS_BLUE,
-      id: "workflow-snaps",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Snaps", value: "160 pt / 336 pt / 72% / full" },
-        { label: "Flow", value: "3 steps" },
-      ],
-      renderContent: (context) => <WorkflowSnapsExample context={context} />,
-      sheetProps: {
-        allowFullScreen: true,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: [160, 336, "72%"],
-      },
-      summary: "attached · 160 pt / 336 pt / 72% / full",
-      title: "Workflow Snaps",
+    summary: "136 pt peek · 48% · 84%",
+    title: "Peek",
+  },
+  {
+    accent: PASTELS.sage.accent,
+    pastel: PASTELS.sage,
+    id: "workflow-snaps",
+    renderContent: (context) => <WorkflowSnapsExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: [160, 336, "72%"],
     },
-    {
-      accent: IOS_GREEN,
-      id: "scrollable-fullscreen",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Snaps", value: "48% / 82% / full" },
-        { label: "Drag region", value: "sheet + scroll handoff" },
-      ],
-      renderContent: (context) => (
-        <ScrollableFullscreenExample context={context} />
-      ),
-      sheetProps: {
-        allowFullScreen: true,
-        applyContentInset: false,
-        dragRegion: "sheet",
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["48%", "82%"],
-      },
-      summary: "attached · 48% / 82% / full · content drag",
-      title: "Scrollable Fullscreen",
+    summary: "160 · 336 · 72% · full",
+    title: "Steps",
+  },
+  {
+    accent: PASTELS.rose.accent,
+    pastel: PASTELS.rose,
+    id: "scrollable-fullscreen",
+    renderContent: (context) => <ScrollableFullscreenExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      applyContentInset: false,
+      dragRegion: "sheet",
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["48%", "82%"],
     },
-  ];
-}
-
-const styles = StyleSheet.create({
-  fill: {
-    flex: 1,
+    summary: "48% · 82% · full · content drag",
+    title: "Scroll",
   },
-  fillSpacer: {
-    flex: 1,
-  },
-  group: {
-    backgroundColor: "#1C1C1E",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  groupCopy: {
-    flex: 1,
-    gap: 4,
-    paddingRight: 16,
-  },
-  groupRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  groupRowDivider: {
-    borderTopColor: "#2C2C2E",
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  header: {
-    gap: 4,
-  },
-  headerSummary: {
-    color: "#8E8E93",
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  headerTitle: {
-    color: "#FFFFFF",
-    fontSize: 28,
-    fontWeight: "700",
-    letterSpacing: -0.7,
-  },
-  rowDetail: {
-    color: "#8E8E93",
-    fontSize: 13,
-    lineHeight: 17,
-  },
-  rowLabel: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-    letterSpacing: -0.2,
-  },
-  rowValue: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
-    paddingTop: 1,
-    textAlign: "right",
-  },
-  scrollContent: {
-    gap: 18,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  section: {
-    gap: 8,
-  },
-  sectionTitle: {
-    color: "#8E8E93",
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: -0.1,
-    paddingHorizontal: 4,
-  },
-  sheet: {
-    backgroundColor: "#111214",
-  },
-  stack: {
-    gap: 18,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-});
-
-export const BOTTOM_SHEET_SCENARIOS = createScenarioDefinitions();
+];
 
 type TopSheetScenarioSheetProps = Pick<
   TopSheetProps,
@@ -1029,8 +538,8 @@ export type TopSheetScenarioRenderContext = {
 
 export type TopSheetScenarioDefinition = {
   accent: string;
+  pastel: Pastel;
   id: string;
-  infoRows: ScenarioInfoRow[];
   renderContent: (
     context: TopSheetScenarioRenderContext
   ) => React.ReactNode;
@@ -1039,154 +548,41 @@ export type TopSheetScenarioDefinition = {
   title: string;
 };
 
-function TopSheetRuntimeSection({
-  accent,
+function TopDetachedExample({
   context,
-  extraRows = [],
 }: {
-  accent: string;
   context: TopSheetScenarioRenderContext;
-  extraRows?: DataRow[];
 }) {
-  const insets = useTopSheetInsets();
-  const { height: viewportHeight } = useWindowDimensions();
-
   return (
-    <Section
-      rows={[
-        {
-          label: "Current height",
-          value: `${Math.round(context.currentHeight)} pt`,
-          valueColor: accent,
-        },
-        {
-          label: "Snap index",
-          value:
-            context.currentSnapIndex >= 0
-              ? `${context.currentSnapIndex}`
-              : "closed",
-        },
-        {
-          label: "Top safe area",
-          value: `${Math.round(insets.top)} pt`,
-        },
-        {
-          label: "Viewport height",
-          value: `${Math.round(viewportHeight)} pt`,
-        },
-        ...extraRows,
-      ]}
-      title="Runtime"
-    />
+    <SheetSurface>
+      <SheetBody
+        context={context}
+        subtitle="detached · 42%"
+        tagline="top sheet"
+        title="Top"
+      />
+    </SheetSurface>
   );
 }
 
-function TopSheetDetachedExample({
+function TopMorphExample({
   context,
 }: {
   context: TopSheetScenarioRenderContext;
 }) {
   return (
-    <View style={styles.stack}>
-      <SheetHeader
-        summary="detached · 42% / safe-area floor"
-        title="Top Sheet Detached"
-      />
-      <TopSheetRuntimeSection
-        accent={IOS_GREEN}
+    <View style={[styles.surface, styles.fill, { backgroundColor: SHEET_BG }]}>
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Mode", value: "detached card" },
-          { label: "Dismiss", value: "swipe up + backdrop" },
-        ]}
-      />
-      <Section
-        rows={[
-          {
-            detail: "24h volume $1.2M · trending",
-            label: "Token price",
-            value: "$0.0203",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "All-time high $0.041",
-            label: "24H change",
-            value: "+11.73%",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Rank #142 by believers",
-            label: "Market cap",
-            value: "$20.3M",
-          },
-        ]}
-        title="Market overview"
+        subtitle="42% · morph to fullscreen"
+        tagline="top morph"
+        title="Expand"
       />
     </View>
   );
 }
 
-function TopSheetDetachedToFullscreenExample({
-  context,
-}: {
-  context: TopSheetScenarioRenderContext;
-}) {
-  return (
-    <View style={[styles.stack, styles.fill]}>
-      <SheetHeader
-        summary="detached · 42% / safe-area floor"
-        title="Top Sheet To Fullscreen"
-      />
-      <TopSheetRuntimeSection
-        accent={IOS_GREEN}
-        context={context}
-        extraRows={[
-          { label: "Bottom ceiling", value: "safe area" },
-          { label: "Corner morph", value: "live" },
-        ]}
-      />
-      <Section
-        rows={[
-          {
-            detail: "24h volume $1.2M · trending",
-            label: "Token price",
-            value: "$0.0203",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "All-time high $0.041",
-            label: "24H change",
-            value: "+11.73%",
-            valueColor: IOS_GREEN,
-          },
-          {
-            detail: "Rank #142 by believers",
-            label: "Market cap",
-            value: "$20.3M",
-          },
-          {
-            detail: "8,530 active believers",
-            label: "Community",
-            value: "8.5K",
-            valueColor: IOS_TEAL,
-          },
-        ]}
-        title="Market overview"
-      />
-      <View style={styles.fillSpacer} />
-      <Section
-        rows={[
-          { label: "Claimed fees", value: "$564.4K", valueColor: IOS_GREEN },
-          { label: "Created by", value: "Bobby Ghoshal" },
-          { label: "Ticker", value: "DUPE" },
-        ]}
-        title="Token details"
-      />
-    </View>
-  );
-}
-
-function TopSheetScrollableExample({
+function TopScrollableExample({
   context,
 }: {
   context: TopSheetScenarioRenderContext;
@@ -1198,112 +594,147 @@ function TopSheetScrollableExample({
       contentContainerStyle={[
         styles.scrollContent,
         {
+          backgroundColor: SHEET_BG,
           paddingTop: insets.top + 10,
         },
       ]}
       showsVerticalScrollIndicator={false}
+      style={{ backgroundColor: SHEET_BG }}
     >
-      <SheetHeader
-        summary="attached · 48% / 82% / full · content drag"
-        title="Top Sheet Scrollable"
-      />
-      <TopSheetRuntimeSection
-        accent={IOS_TEAL}
+      <SheetBody
         context={context}
-        extraRows={[
-          { label: "Entries", value: `${ACTIVITY_LOG.length}` },
-          { label: "Drag region", value: "content" },
-        ]}
+        subtitle="48% · 82% · full · content drag"
+        tagline="top scrollable"
+        title="Flow"
       />
-      <Section
-        rows={ACTIVITY_LOG.map(([time, label, detail]) => ({
-          detail,
-          label,
-          value: time,
-          valueColor: IOS_TEAL,
-        }))}
-        title="Activity log"
-      />
+      <View style={styles.scrollSpacer} />
     </TopSheetScrollView>
   );
 }
 
-function createTopSheetScenarioDefinitions(): TopSheetScenarioDefinition[] {
-  return [
-    {
-      accent: IOS_GREEN,
-      id: "top-detached",
-      infoRows: [
-        { label: "Mode", value: "detached" },
-        { label: "Snap", value: "42%" },
-        { label: "Dismiss", value: "swipe up + backdrop" },
-      ],
-      renderContent: (context) => <TopSheetDetachedExample context={context} />,
-      sheetProps: {
-        cornerRadius: 56,
-        detached: true,
-        detachedPadding: {
-          horizontal: 12,
-          top: 12,
-        },
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["42%"],
-      },
-      summary: "detached · 42%",
-      title: "Top Sheet Detached",
+export const TOP_SHEET_SCENARIOS: TopSheetScenarioDefinition[] = [
+  {
+    accent: PASTELS.blossom.accent,
+    pastel: PASTELS.blossom,
+    id: "top-detached",
+    renderContent: (context) => <TopDetachedExample context={context} />,
+    sheetProps: {
+      cornerRadius: 44,
+      detached: true,
+      detachedPadding: { horizontal: 12, top: 12 },
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["42%"],
     },
-    {
-      accent: IOS_GREEN,
-      id: "top-detached-fullscreen",
-      infoRows: [
-        { label: "Mode", value: "detached to fullscreen" },
-        { label: "Base", value: "42%" },
-        { label: "Bottom ceiling", value: "safe area" },
-      ],
-      renderContent: (context) => (
-        <TopSheetDetachedToFullscreenExample context={context} />
-      ),
-      sheetProps: {
-        allowFullScreen: true,
-        contentContainerStyle: styles.fill,
-        cornerRadius: 56,
-        detached: true,
-        detachedPadding: {
-          horizontal: 12,
-          top: 12,
-        },
-        fullScreenCornerRadius: 0,
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["42%"],
-      },
-      summary: "detached · 42% / safe-area floor",
-      title: "Top Sheet To Fullscreen",
+    summary: "detached · 42%",
+    title: "Top",
+  },
+  {
+    accent: PASTELS.sand.accent,
+    pastel: PASTELS.sand,
+    id: "top-detached-fullscreen",
+    renderContent: (context) => <TopMorphExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      contentContainerStyle: { flex: 1 },
+      cornerRadius: 44,
+      detached: true,
+      detachedPadding: { horizontal: 12, top: 12 },
+      fullScreenCornerRadius: 0,
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["26%"],
     },
-    {
-      accent: IOS_TEAL,
-      id: "top-scrollable-fullscreen",
-      infoRows: [
-        { label: "Mode", value: "attached" },
-        { label: "Snaps", value: "48% / 82% / full" },
-        { label: "Drag region", value: "sheet + scroll handoff" },
-      ],
-      renderContent: (context) => (
-        <TopSheetScrollableExample context={context} />
-      ),
-      sheetProps: {
-        allowFullScreen: true,
-        applyContentInset: false,
-        dragRegion: "sheet",
-        initialSnapIndex: 0,
-        sheetStyle: styles.sheet,
-        snapPoints: ["48%", "82%"],
-      },
-      summary: "attached · 48% / 82% / full · content drag",
-      title: "Top Sheet Scrollable",
+    summary: "26% · morph to fullscreen",
+    title: "Expand",
+  },
+  {
+    accent: PASTELS.cloud.accent,
+    pastel: PASTELS.cloud,
+    id: "top-scrollable-fullscreen",
+    renderContent: (context) => <TopScrollableExample context={context} />,
+    sheetProps: {
+      allowFullScreen: true,
+      applyContentInset: false,
+      dragRegion: "sheet",
+      handleColor: SHEET_HANDLE,
+      initialSnapIndex: 0,
+      sheetStyle: sheetStyleBlack,
+      snapPoints: ["48%", "82%"],
     },
-  ];
-}
+    summary: "48% · 82% · full · content drag",
+    title: "Flow",
+  },
+];
 
-export const TOP_SHEET_SCENARIOS = createTopSheetScenarioDefinitions();
+const styles = StyleSheet.create({
+  bodyHeader: {
+    gap: 2,
+  },
+  bodyStack: {
+    gap: 18,
+  },
+  chip: {
+    backgroundColor: SHEET_CHIP_BG,
+    borderColor: SHEET_CHIP_BORDER,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  chipText: {
+    color: SHEET_FG,
+    fontSize: 13,
+    fontWeight: "500",
+    letterSpacing: -0.1,
+  },
+  eyebrow: {
+    color: SHEET_MUTED,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.6,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+  },
+  fill: {
+    flex: 1,
+  },
+  scrollContent: {
+    backgroundColor: SHEET_BG,
+    gap: 18,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+  },
+  scrollSpacer: {
+    minHeight: 1200,
+  },
+  sheetSubtitle: {
+    color: SHEET_MUTED,
+    fontSize: 15,
+    fontWeight: "400",
+    letterSpacing: -0.2,
+    lineHeight: 21,
+    paddingTop: 6,
+  },
+  sheetTitle: {
+    color: SHEET_FG,
+    fontSize: 44,
+    fontWeight: "700",
+    letterSpacing: -1.8,
+    lineHeight: 46,
+  },
+  surface: {
+    backgroundColor: SHEET_BG,
+    flex: 0,
+    gap: 18,
+    paddingHorizontal: 24,
+    paddingTop: 18,
+  },
+});
